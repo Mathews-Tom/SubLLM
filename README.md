@@ -34,9 +34,8 @@ SubLLM eliminates the double-pay problem. It routes standard `completion()` call
 ### 1. Install
 
 ```bash
-uv add subllm              # Core (CLI subprocess mode)
+uv add subllm              # Core (includes Claude Agent SDK)
 uv add subllm[server]      # + OpenAI-compatible proxy server
-uv add subllm[sdk]         # + Claude Agent SDK integration
 ```
 
 ### 2. Authenticate Your CLIs
@@ -142,8 +141,7 @@ response = client.chat.completions.create(
 ```plaintext
 User Code ──→ subllm.completion() ──→ Router
                                        ├── ClaudeCodeProvider
-                                       │     └── claude --print (subprocess)
-                                       │         or claude-agent-sdk (async)
+                                       │     └── claude-agent-sdk (persistent client)
                                        ├── CodexProvider
                                        │     └── codex exec (subprocess)
                                        └── GeminiCLIProvider

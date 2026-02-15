@@ -91,6 +91,11 @@ class Router:
             )
         return await provider.check_auth()
 
+    async def close(self) -> None:
+        """Close all provider connections (SDK clients, etc.)."""
+        for provider in self._providers.values():
+            await provider.close()
+
     def _resolve(self, model: str) -> tuple[Provider, str]:
         """Parse 'provider/model' and return (provider_instance, model_alias)."""
         if "/" in model:
@@ -224,6 +229,11 @@ async def check_auth(*, force: bool = False) -> list[AuthStatus]:
 async def check_auth_provider(provider_name: str) -> AuthStatus:
     """Check auth for a single provider by name."""
     return await _router.check_auth_provider(provider_name)
+
+
+async def close() -> None:
+    """Close all provider connections on the module-level router."""
+    await _router.close()
 
 
 def get_router() -> Router:

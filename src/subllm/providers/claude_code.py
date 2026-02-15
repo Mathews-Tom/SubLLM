@@ -1,10 +1,12 @@
-"""Claude Code provider — routes LLM calls through the Claude Code CLI.
+"""Claude Code provider — routes LLM calls through the Agent SDK.
 
-Two execution modes:
-1. CLI subprocess (`claude --print`) — zero Python deps, works with any auth
-2. Agent SDK (`claude-agent-sdk`) — richer streaming, typed errors, warm process
+Uses a persistent SDK client (`claude-agent-sdk`) for all inference. The client
+maintains a warm subprocess — subsequent calls skip spawn overhead entirely.
 
-Auth priority (handled by CLI):
+Auth checking still uses lightweight CLI subprocess calls (`claude auth status`)
+because the SDK doesn't expose an auth-check API.
+
+Auth priority (handled by CLI/SDK):
   ANTHROPIC_API_KEY > CLAUDE_CODE_OAUTH_TOKEN > keychain subscription OAuth
 
 To use subscription auth, ensure ANTHROPIC_API_KEY is NOT set and run `claude login`.
@@ -15,9 +17,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 from collections.abc import AsyncIterator
+from typing import Any, Literal
+
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 from subllm.providers.base import Provider, ProviderCapabilities, estimate_tokens, messages_to_prompt
 from subllm.types import (
@@ -31,25 +38,47 @@ from subllm.types import (
     Usage,
 )
 
+logger = logging.getLogger(__name__)
+
 _MODEL_MAP: dict[str, str] = {
     "opus-4-6": "claude-opus-4-6",
     "sonnet-4-5": "claude-sonnet-4-5",
     "haiku-4-5": "claude-haiku-4-5",
 }
 
+# SDK effort levels exposed through the provider interface
+EffortLevel = Literal["low", "medium", "high", "max"]
+
+# SDK thinking modes
+ThinkingMode = Literal["adaptive", "enabled", "disabled"]
+
 
 class ClaudeCodeProvider(Provider):
-    """Routes completions through the Claude Code CLI."""
+    """Routes completions through the Claude Code Agent SDK.
+
+    Args:
+        cli_path: Path to the `claude` CLI binary. Used for auth checks. Auto-detected if None.
+        env_overrides: Extra environment variables passed to the SDK process.
+        thinking: Thinking mode. "adaptive" (default), "enabled", or "disabled".
+        thinking_budget: Token budget when thinking="enabled". Ignored for "adaptive"/"disabled".
+        effort: Effort level. Controls thinking depth with adaptive mode.
+    """
 
     def __init__(
         self,
         cli_path: str | None = None,
-        use_sdk: bool = False,
         env_overrides: dict[str, str] | None = None,
+        thinking: ThinkingMode = "adaptive",
+        thinking_budget: int | None = None,
+        effort: EffortLevel | None = None,
     ):
         self._cli_path = cli_path or shutil.which("claude") or "claude"
-        self._use_sdk = use_sdk
         self._env_overrides = env_overrides or {}
+        self._thinking = thinking
+        self._thinking_budget = thinking_budget
+        self._effort = effort
+        # Persistent SDK client — connected on first use, reused across calls
+        self._sdk_client: ClaudeSDKClient | None = None
 
     @property
     def name(self) -> str:
@@ -164,6 +193,54 @@ class ClaudeCodeProvider(Provider):
                 provider=self.name, authenticated=False, error="Claude Code CLI not found.",
             )
 
+    # ── SDK inference ────────────────────────────────────────────────
+
+    def _build_sdk_options(
+        self, model: str, *, system_prompt: str | None = None,
+    ) -> ClaudeAgentOptions:
+        """Build ClaudeAgentOptions for the SDK client."""
+        resolved = self.resolve_model(model)
+
+        # Build thinking config based on provider settings
+        thinking_config: dict[str, Any] | None = None
+        if self._thinking == "adaptive":
+            thinking_config = {"type": "adaptive"}
+        elif self._thinking == "enabled":
+            thinking_config = {"type": "enabled", "budget_tokens": self._thinking_budget or 10_000}
+        elif self._thinking == "disabled":
+            thinking_config = {"type": "disabled"}
+
+        # Merge env overrides with CLAUDECODE unset to prevent nested-session errors.
+        # The SDK's env param is additive to os.environ, so we must explicitly blank it.
+        sdk_env = {"CLAUDECODE": "", **self._env_overrides}
+        if os.environ.get("SUBLLM_FORCE_SUBSCRIPTION"):
+            sdk_env["ANTHROPIC_API_KEY"] = ""
+
+        return ClaudeAgentOptions(
+            model=resolved,
+            max_turns=1,
+            system_prompt=system_prompt or "",
+            permission_mode="bypassPermissions",
+            thinking=thinking_config,
+            effort=self._effort,
+            cli_path=self._cli_path,
+            env=sdk_env,
+        )
+
+    async def _ensure_sdk_client(self, model: str, *, system_prompt: str | None = None) -> ClaudeSDKClient:
+        """Return the persistent SDK client, connecting on first use.
+
+        The client maintains a warm subprocess — subsequent calls skip spawn overhead.
+        """
+        if self._sdk_client is not None:
+            return self._sdk_client
+
+        options = self._build_sdk_options(model, system_prompt=system_prompt)
+        client = ClaudeSDKClient(options)
+        await client.connect()
+        self._sdk_client = client
+        return client
+
     async def complete(
         self,
         messages: list[dict],
@@ -173,11 +250,56 @@ class ClaudeCodeProvider(Provider):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> ChatCompletionResponse:
-        if self._use_sdk:
-            return await self._complete_sdk(messages, model, system_prompt=system_prompt)
-        return await self._complete_cli(
-            messages, model, system_prompt=system_prompt, max_tokens=max_tokens
-        )
+        return await self._complete(messages, model, system_prompt=system_prompt)
+
+    async def _complete(
+        self, messages: list[dict], model: str, *, system_prompt: str | None = None,
+    ) -> ChatCompletionResponse:
+        prompt = messages_to_prompt(messages, system_prompt)
+
+        try:
+            client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
+            await client.query(prompt)
+
+            content_parts: list[str] = []
+            usage_data: dict[str, Any] = {}
+
+            async for message in client.receive_response():
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            content_parts.append(block.text)
+                elif isinstance(message, ResultMessage):
+                    if message.usage:
+                        usage_data = message.usage
+                    if message.is_error:
+                        raise RuntimeError(
+                            f"SDK query failed: {message.result or 'unknown error'}"
+                        )
+
+            content = "".join(content_parts)
+
+            # Use real usage data from ResultMessage if available, else estimate
+            prompt_tokens = usage_data.get("input_tokens", estimate_tokens(prompt))
+            completion_tokens = usage_data.get("output_tokens", estimate_tokens(content))
+
+            return ChatCompletionResponse(
+                model=f"claude-code/{model}",
+                choices=[Choice(
+                    message=Message(role="assistant", content=content),
+                    finish_reason="stop",
+                )],
+                usage=Usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
+                ),
+            )
+
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"SDK error: {exc}") from exc
 
     async def stream(
         self,
@@ -188,165 +310,27 @@ class ClaudeCodeProvider(Provider):
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        if self._use_sdk:
-            async for chunk in self._stream_sdk(messages, model, system_prompt=system_prompt):
-                yield chunk
-        else:
-            async for chunk in self._stream_cli(
-                messages, model, system_prompt=system_prompt, max_tokens=max_tokens
-            ):
-                yield chunk
+        async for chunk in self._stream_impl(messages, model, system_prompt=system_prompt):
+            yield chunk
 
-    # ── CLI subprocess ─────────────────────────────────────────────
-
-    def _build_cli_args(
-        self, prompt: str, model: str, *, max_tokens: int | None = None, output_format: str = "text",
-    ) -> list[str]:
-        resolved = self.resolve_model(model)
-        args = [
-            self._cli_path, "--print", "-p", prompt,
-            "--model", resolved, "--max-turns", "1", "--output-format", output_format,
-        ]
-        if output_format == "stream-json":
-            args.append("--verbose")
-        if max_tokens:
-            args.extend(["--max-tokens", str(max_tokens)])
-        return args
-
-    async def _complete_cli(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
-    ) -> ChatCompletionResponse:
-        prompt = messages_to_prompt(messages, system_prompt)
-        args = self._build_cli_args(prompt, model, max_tokens=max_tokens)
-
-        proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env=self._build_env(),
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"Claude Code CLI failed (exit {proc.returncode}): {stderr.decode().strip()}"
-            )
-
-        content = stdout.decode().strip()
-        return ChatCompletionResponse(
-            model=f"claude-code/{model}",
-            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
-            usage=Usage(
-                prompt_tokens=estimate_tokens(prompt),
-                completion_tokens=estimate_tokens(content),
-                total_tokens=estimate_tokens(prompt) + estimate_tokens(content),
-            ),
-        )
-
-    async def _stream_cli(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
-    ) -> AsyncIterator[ChatCompletionChunk]:
-        prompt = messages_to_prompt(messages, system_prompt)
-        args = self._build_cli_args(prompt, model, max_tokens=max_tokens, output_format="stream-json")
-
-        proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env=self._build_env(),
-        )
-
-        chunk_id = f"chatcmpl-cc-{id(proc)}"
-        first = True
-
-        assert proc.stdout is not None
-        async for line_bytes in proc.stdout:
-            line = line_bytes.decode().strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-                if event.get("type") == "assistant" and "message" in event:
-                    for block in event["message"].get("content", []):
-                        if block.get("type") == "text" and block.get("text"):
-                            yield ChatCompletionChunk(
-                                id=chunk_id, model=f"claude-code/{model}",
-                                choices=[StreamChoice(delta=Delta(
-                                    role="assistant" if first else None, content=block["text"],
-                                ))],
-                            )
-                            first = False
-                elif event.get("type") == "result":
-                    continue  # Summary event — content already yielded via assistant message
-            except json.JSONDecodeError:
-                if line:
-                    yield ChatCompletionChunk(
-                        id=chunk_id, model=f"claude-code/{model}",
-                        choices=[StreamChoice(delta=Delta(
-                            role="assistant" if first else None, content=line + "\n",
-                        ))],
-                    )
-                    first = False
-
-        yield ChatCompletionChunk(
-            id=chunk_id, model=f"claude-code/{model}",
-            choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
-        )
-        await proc.wait()
-
-    # ── Agent SDK ──────────────────────────────────────────────────
-
-    async def _complete_sdk(
-        self, messages: list[dict], model: str, *, system_prompt: str | None = None,
-    ) -> ChatCompletionResponse:
-        try:
-            from claude_agent_sdk import ClaudeAgentOptions, query
-        except ImportError:
-            raise ImportError("claude-agent-sdk not installed. Run: pip install subllm[sdk]")
-
-        prompt = messages_to_prompt(messages, system_prompt)
-        resolved = self.resolve_model(model)
-        options = ClaudeAgentOptions(
-            model=resolved, max_turns=1, system_prompt=system_prompt or "",
-        )
-
-        content_parts: list[str] = []
-        async for message in query(prompt=prompt, options=options):
-            if hasattr(message, "content"):
-                for block in message.content:
-                    if hasattr(block, "text"):
-                        content_parts.append(block.text)
-
-        content = "".join(content_parts)
-        return ChatCompletionResponse(
-            model=f"claude-code/{model}",
-            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
-            usage=Usage(
-                prompt_tokens=estimate_tokens(prompt),
-                completion_tokens=estimate_tokens(content),
-                total_tokens=estimate_tokens(prompt) + estimate_tokens(content),
-            ),
-        )
-
-    async def _stream_sdk(
+    async def _stream_impl(
         self, messages: list[dict], model: str, *, system_prompt: str | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        try:
-            from claude_agent_sdk import ClaudeAgentOptions, query
-        except ImportError:
-            raise ImportError("claude-agent-sdk not installed. Run: pip install subllm[sdk]")
-
         prompt = messages_to_prompt(messages, system_prompt)
-        resolved = self.resolve_model(model)
-        options = ClaudeAgentOptions(
-            model=resolved, max_turns=1, system_prompt=system_prompt or "",
-        )
 
-        chunk_id = f"chatcmpl-sdk-{id(options)}"
+        try:
+            client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
+            await client.query(prompt)
+        except Exception as exc:
+            raise RuntimeError(f"SDK connection error: {exc}") from exc
+
+        chunk_id = f"chatcmpl-sdk-{id(client)}"
         first = True
 
-        async for message in query(prompt=prompt, options=options):
-            if hasattr(message, "content"):
+        async for message in client.receive_response():
+            if isinstance(message, AssistantMessage):
                 for block in message.content:
-                    if hasattr(block, "text"):
+                    if isinstance(block, TextBlock):
                         yield ChatCompletionChunk(
                             id=chunk_id, model=f"claude-code/{model}",
                             choices=[StreamChoice(delta=Delta(
@@ -354,8 +338,21 @@ class ClaudeCodeProvider(Provider):
                             ))],
                         )
                         first = False
+            elif isinstance(message, ResultMessage):
+                if message.is_error:
+                    logger.error("SDK stream error: %s", message.result)
 
         yield ChatCompletionChunk(
             id=chunk_id, model=f"claude-code/{model}",
             choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
         )
+
+    async def close(self) -> None:
+        """Disconnect the persistent SDK client if connected."""
+        if self._sdk_client is not None:
+            try:
+                await self._sdk_client.disconnect()
+            except Exception:
+                logger.debug("SDK client disconnect error (ignored)", exc_info=True)
+            finally:
+                self._sdk_client = None

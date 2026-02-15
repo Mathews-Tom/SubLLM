@@ -36,13 +36,14 @@ from subllm.router import (
     batch,
     check_auth,
     check_auth_provider,
+    close,
     completion,
     get_router,
     list_models,
 )
 from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "Provider",
@@ -51,6 +52,7 @@ __all__ = [
     "batch",
     "check_auth",
     "check_auth_provider",
+    "close",
     "completion",
     "get_router",
     "list_models",
