@@ -17,7 +17,9 @@ import asyncio
 import json
 import os
 import shutil
+import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from subllm.providers.base import Provider, ProviderCapabilities, estimate_tokens, messages_to_prompt
 from subllm.types import (
@@ -84,6 +86,11 @@ class GeminiCLIProvider(Provider):
         if os.environ.get("GOOGLE_API_KEY"):
             return AuthStatus(provider=self.name, authenticated=True, method="google_api_key")
 
+        # Fast path: check OAuth credential file on disk (<10ms vs ~16s for inference)
+        result = self._check_auth_from_file()
+        if result is not None:
+            return result
+
         if not shutil.which(self._cli_path):
             return AuthStatus(
                 provider=self.name, authenticated=False,
@@ -91,6 +98,48 @@ class GeminiCLIProvider(Provider):
                 "Install: npm install -g @google/gemini-cli or see https://geminicli.com",
             )
 
+        # Slow fallback: full inference roundtrip (no credential file found)
+        return await self._check_auth_slow()
+
+    def _check_auth_from_file(self) -> AuthStatus | None:
+        """Check Gemini OAuth credentials on disk for fast auth verification.
+
+        Returns None if credential file is missing or unparseable, triggering slow fallback.
+        The presence of a refresh_token means the CLI will auto-refresh on next use,
+        so we treat expired access tokens with valid refresh tokens as authenticated.
+        """
+        oauth_path = Path.home() / ".gemini" / "oauth_creds.json"
+        try:
+            data = json.loads(oauth_path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None  # File missing or corrupt → fall back to slow check
+
+        access_token = data.get("access_token")
+        refresh_token = data.get("refresh_token")
+        if not access_token and not refresh_token:
+            return None  # No usable credentials → fall back
+
+        # If refresh_token exists, the CLI will auto-refresh — consider authenticated
+        if refresh_token:
+            return AuthStatus(provider=self.name, authenticated=True, method="google_oauth")
+
+        # Access token only (no refresh) — check expiry
+        expiry = data.get("expiry_date")
+        if expiry is not None:
+            # Normalize: >10^12 = milliseconds, otherwise seconds
+            expiry_sec = expiry / 1000 if expiry > 1e12 else expiry
+            if expiry_sec > time.time():
+                return AuthStatus(provider=self.name, authenticated=True, method="google_oauth")
+            return AuthStatus(
+                provider=self.name, authenticated=False,
+                error="Google OAuth token expired. Run `gemini` to re-authenticate.",
+            )
+
+        # Has access_token but no expiry field — assume valid
+        return AuthStatus(provider=self.name, authenticated=True, method="google_oauth")
+
+    async def _check_auth_slow(self) -> AuthStatus:
+        """Fallback: run a minimal inference call to verify auth."""
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._cli_path, "-p", "say ok", "--output-format", "json",

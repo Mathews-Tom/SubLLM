@@ -30,17 +30,15 @@ async def main() -> None:
     # ── Auth ──────────────────────────────────────────────
     t0 = time.perf_counter()
     with console.status(f"[bold cyan]Checking {PROVIDER} auth…"):
-        statuses = await subllm.check_auth()
+        status = await subllm.check_auth_provider(PROVIDER)
     t_auth = time.perf_counter() - t0
     timings.append(("Auth check", PROVIDER, t_auth))
 
-    for s in statuses:
-        if s.provider == PROVIDER:
-            icon = "[green]✓[/]" if s.authenticated else "[red]✗[/]"
-            console.print(f"  {icon} {s.provider}: {s.method or s.error} [dim]({_fmt(t_auth)})[/]")
-            if not s.authenticated:
-                console.print("[red]Auth failed. Run `claude login` first.[/]")
-                return
+    icon = "[green]✓[/]" if status.authenticated else "[red]✗[/]"
+    console.print(f"  {icon} {status.provider}: {status.method or status.error} [dim]({_fmt(t_auth)})[/]")
+    if not status.authenticated:
+        console.print("[red]Auth failed. Run `claude login` first.[/]")
+        return
     console.print()
 
     # ── Models ────────────────────────────────────────────

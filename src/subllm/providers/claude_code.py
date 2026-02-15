@@ -96,6 +96,48 @@ class ClaudeCodeProvider(Provider):
                 "Install: curl -fsSL https://claude.ai/install.sh | bash",
             )
 
+        # Fast path: `claude auth status` (~275ms vs ~13s for full inference)
+        result = await self._check_auth_fast()
+        if result is not None:
+            return result
+
+        # Slow fallback: full inference roundtrip (older CLI without `auth status`)
+        return await self._check_auth_slow()
+
+    async def _check_auth_fast(self) -> AuthStatus | None:
+        """Try `claude auth status` for lightweight auth verification.
+
+        Returns None if the command is unavailable (older CLI), triggering slow fallback.
+        """
+        try:
+            env = self._build_env()
+            env["CLAUDECODE"] = ""  # Prevent error inside active Claude Code sessions
+            proc = await asyncio.create_subprocess_exec(
+                self._cli_path, "auth", "status",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+
+            stderr_text = stderr.decode().strip()
+            if proc.returncode != 0 or "Unknown command" in stderr_text:
+                return None  # Command not available, use slow fallback
+
+            data = json.loads(stdout.decode())
+            if data.get("loggedIn"):
+                method = data.get("subscriptionType") or data.get("authMethod") or "subscription"
+                return AuthStatus(provider=self.name, authenticated=True, method=method)
+            return AuthStatus(
+                provider=self.name,
+                authenticated=False,
+                error="Not logged in. Run `claude login` to authenticate.",
+            )
+        except (asyncio.TimeoutError, json.JSONDecodeError, FileNotFoundError, OSError):
+            return None  # Any failure → fall back to slow check
+
+    async def _check_auth_slow(self) -> AuthStatus:
+        """Fallback: run a minimal inference call to verify auth."""
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._cli_path, "--print", "-p", "say ok", "--max-turns", "1",
