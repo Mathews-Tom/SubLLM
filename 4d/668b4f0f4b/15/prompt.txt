@@ -1,0 +1,5 @@
+Remember the number 42.
+
+[Assistant: I'll remember that: **42**.]
+
+What number did I ask you to remember?
