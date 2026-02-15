@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "f01daa34dd5b",
+  "session_id": "5895a49f-2cb1-4a26-b2d8-4e9cd3645013",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T19:14:23.192586Z",
+  "branch": "experiment/agent-sdk-perf",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "README.md",
+    "pyproject.toml",
+    "src/subllm/__init__.py",
+    "src/subllm/providers/claude_code.py",
+    "src/subllm/router.py"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 37,
+    "cache_creation_tokens": 69322,
+    "cache_read_tokens": 2245379,
+    "output_tokens": 1127,
+    "api_call_count": 29
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T19:14:23.154869Z",
+    "agent_lines": 178,
+    "human_added": 13,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 191,
+    "agent_percentage": 93.19371727748691
+  }
+}
