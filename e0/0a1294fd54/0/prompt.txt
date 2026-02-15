@@ -1,0 +1,229 @@
+Implement the following plan:
+
+# Plan: Remove CLI subprocess path, SDK-only for Claude Code provider
+
+## Context
+
+Benchmark results confirmed SDK path is 42-76% faster across all single-request workloads (warm call: -75.6%, cold start: -66.8%, multi-turn: -64.5%). The `use_sdk` toggle and CLI subprocess inference path are now dead weight. Making `claude-agent-sdk` a hard dependency per user decision.
+
+Auth checking (`_check_auth_fast`, `_check_auth_slow`) still uses lightweight CLI subprocess calls (`claude auth status`) — these stay, as the SDK doesn't expose an auth-check API.
+
+## Changes
+
+### 1. `pyproject.toml`
+- Move `claude-agent-sdk>=0.1.30` from `optional-dependencies.sdk` to `dependencies`
+- Remove the `sdk` optional group
+
+### 2. `src/subllm/providers/claude_code.py` (bulk of the work)
+**Remove:**
+- `use_sdk` constructor param and `_use_sdk` field
+- `_build_cli_args()` method (L239-251)
+- `_complete_cli()` method (L253-280)
+- `_stream_cli()` method (L282-330)
+- CLI/SDK branching in `complete()` and `stream()`
+- `try/except ImportError` guards in SDK methods
+
+**Refactor:**
+- Move SDK imports to module level (no longer deferred): `ClaudeSDKClient`, `ClaudeAgentOptions` from `claude_agent_sdk`; `AssistantMessage`, `TextBlock`, `ResultMessage` from `claude_agent_sdk.types`
+- Type `_sdk_client` as `ClaudeSDKClient | None` (not `Any`)
+- Rename `_complete_sdk` → `_complete`, `_stream_sdk` → `_stream_impl`
+- `complete()` calls `_complete()` directly; `stream()` yields from `_stream_impl()` directly
+- Update module docstring to reflect SDK-only architecture
+- Remove `json` import (only used by CLI path and auth — auth still needs it, keep if so)
+
+**Keep unchanged:**
+- `_build_env()` — used by auth check subprocess calls
+- `check_auth()`, `_check_auth_fast()`, `_check_auth_slow()` — CLI subprocess for auth stays
+- `close()` — already correct
+- `_build_sdk_options()`, `_ensure_sdk_client()` — already correct
+- Constructor params: `cli_path`, `env_overrides`, `thinking`, `thinking_budget`, `effort`
+
+### 3. `src/subllm/router.py`
+- Remove `sdk_mode` param from `Router.__init__()` — always `ClaudeCodeProvider()` (SDK is the only path)
+- Module-level `_router = Router()` stays unchanged
+
+### 4. `benchmarks/sdk_vs_cli.py`
+- Archive: rename to `benchmarks/sdk_vs_cli_archived.py` to preserve results without breaking imports
+- The file references `use_sdk=False/True` which will no longer exist
+
+## Files
+
+| File | Action |
+|------|--------|
+| `pyproject.toml` | Move SDK to hard dep, remove `sdk` extra |
+| `src/subllm/providers/claude_code.py` | Remove CLI path, top-level SDK imports, simplify |
+| `src/subllm/router.py` | Remove `sdk_mode` param |
+| `benchmarks/sdk_vs_cli.py` | Rename to `_archived.py` |
+
+## Verification
+
+1. `uv run python -c "import subllm; print(subllm.list_models())"` — imports without `--extra sdk`
+2. `uv run python -c "from claude_agent_sdk import ClaudeSDKClient"` — hard dep available
+3. `uv run python examples/claude_code.py` — smoke test completion + streaming
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/druk/.REDACTED.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+Great. we can remove benchmarking script. Have we completely switched CLI to SDK for Claude?
+
+---
+
+Great. Update the README.md file.
+
+---
+
+Great. Let us commit all the changes and lets publish a new package.
+
+---
+
+[Request interrupted by user]
+
+---
+
+Great. Let us commit all the changes and lets publish a new version of the package.
+
+---
+
+Let us use twine as a dev dependency to publiish package.
+
+---
+
+Create a new release tag, push the changes and create a detailed PR.
+
+---
+
+merge the pr
+
+---
+
+We should update the banner image, `assets/banner.png`
+
+---
+
+Base directory for this skill: /Users/druk/.claude/skills/concept-to-image
+
+# Concept to Image
+
+Creates polished visuals from concepts using HTML/CSS/SVG as a refineable intermediate, then exports to PNG or SVG.
+
+## Why HTML as intermediate
+
+HTML is the refineable layer between idea and image. Unlike direct canvas rendering, the user can see the HTML artifact, request changes ("make the title bigger", "swap the colors", "add a third column"), and only export once satisfied. This makes the workflow iterative and controllable.
+
+## Workflow
+
+```
+Concept → HTML artifact (view + refine) → PNG or SVG export
+```
+
+1. **Interpret** the user's concept — determine what kind of visual best fits (diagram, infographic, card, chart, etc.)
+2. **Design** a self-contained HTML file using inline CSS and inline SVG — zero external dependencies
+3. **Present** the HTML as an artifact so the user can preview and request refinements
+4. **Iterate** on the HTML based on user feedback (colors, layout, content, sizing)
+5. **Export** to PNG and/or SVG when the user is satisfied, using `scripts/render_to_image.py`
+
+## Step 1: Interpret the concept
+
+Determine the best visual format:
+
+| User intent | Visual format | Approach |
+|---|---|---|
+| Explain a process/flow | Flowchart or pipeline diagram | SVG paths + boxes |
+| Compare items | Side-by-side or matrix | CSS Grid |
+| Show hierarchy | Tree or layered diagram | Nested containers + SVG connectors |
+| Present data | Chart or infographic | SVG shapes + data labels |
+| Social/marketing graphic | Card or poster | Typography-forward HTML/CSS |
+| Icon, logo, badge | Compact symbol | Pure SVG |
+| Educational concept | Annotated diagram | SVG + positioned labels |
+
+## Step 2: Design the HTML
+
+Read `references/design-guide.md` for detailed design patterns and anti-patterns.
+
+Core rules:
+- **Single file, self-contained**: All CSS inline in `<style>`, all graphics as inline `<svg>`. No external resources.
+- **Fixed viewport**: Set explicit `width` and `height` on the root container matching the intended export size. This is critical — Playwright screenshots the element at this exact size.
+- **Anti-AI-slop**: Avoid centered-everything layouts, purple gradients, uniform rounded corners, and Inter/system font defaults. See design guide for alternatives.
+- **SVG-first for shapes**: Use inline SVG for icons, connectors, shapes, and any element that should scale cleanly. CSS for layout and typography.
+- **Color with intention**: 3-4 hues max + neutrals. Define as CSS custom properties. Every color encodes meaning.
+- **Start from the template**: Use `assets/template.html` as the base structure.
+
+### Sizing guidelines
+
+| Use case | Recommended size |
+|---|---|
+| Social media graphic | 1200×630 |
+| Infographic (portrait) | 800×1200 |
+| Presentation slide | 1920×1080 |
+| Square post | 1080×1080 |
+| Icon/badge | 256×256 or 512×512 |
+| Wide diagram | 1600×900 |
+
+Set the `.canvas` container to the chosen size. The export script captures this element.
+
+## Step 3: Present and iterate
+
+Present the HTML file to the user. They'll see it rendered as an artifact. Common refinement requests:
+- Color/theme changes → update CSS custom properties
+- Layout adjustments → modify grid/flexbox
+- Content changes → edit text/SVG elements
+- Size changes → update `.canvas` dimensions
+
+Each iteration is a quick HTML edit, not a full re-render. This is the key advantage over direct image generation.
+
+## Step 4: Export to image
+
+Once the user is satisfied, run the export script:
+
+```bash
+python3 scripts/render_to_image.py <input.html> <output.png|.svg> [--width 1200] [--height 630] [--scale 2] [--selector ".canvas"]
+```
+
+### Parameters
+
+| Param | Default | Description |
+|---|---|---|
+| `input` | (required) | Path to HTML file |
+| `output` | (required) | Output path. Extension determines format (.png or .svg) |
+| `--width` | auto | Viewport width (overrides HTML-defined size) |
+| `--height` | auto | Viewport height (overrides HTML-defined size) |
+| `--scale` | 2 | Device scale factor for PNG (2 = retina quality) |
+| `--selector` | `.canvas` | CSS selector for the element to capture |
+| `--full-page` | false | Capture the full page instead of a specific element |
+
+### PNG export
+Uses Playwright to launch headless Chromium and screenshot the `.canvas` element at the specified scale factor. Scale 2 produces retina-quality output (e.g., 1200×630 CSS pixels → 2400×1260 PNG).
+
+### SVG export
+Two strategies, chosen automatically:
+1. **SVG-native content**: If the `.canvas` element contains a single root `<svg>`, extracts it directly as a clean SVG file. This produces a true vector SVG.
+2. **HTML-based content**: If the content is CSS/HTML-heavy, falls back to PNG export with a note that true SVG requires SVG-native design. The script will warn and suggest redesigning with SVG elements if vector output is needed.
+
+### Delivering the output
+After export, copy the output file to `/mnt/user-data/outputs/` and present it to the user. Always deliver both the HTML (for future editing) and the image (final output).
+
+## Design anti-patterns to avoid
+
+These produce generic "AI-generated" looking output:
+- Centered everything with equal spacing
+- Purple/blue gradient backgrounds
+- Uniform border-radius on all elements
+- Generic icon libraries (use custom inline SVG)
+- System font stack without typographic intention
+- Drop shadows on everything
+- Low information density (too much whitespace)
+
+## Font handling
+
+Since this environment has limited font access, use web-safe font stacks with intentional fallbacks:
+- **Technical/mono**: `'Courier New', 'Consolas', monospace`
+- **Clean sans**: `'Helvetica Neue', 'Arial', sans-serif`
+- **Editorial serif**: `'Georgia', 'Times New Roman', serif`
+- **Display**: Use SVG text with custom paths for display typography when needed
+
+
+ARGUMENTS: Export /Users/druk/WorkSpace/AetherForge/SubLLM/assets/banner.html as a PNG to /Users/druk/WorkSpace/AetherForge/SubLLM/assets/banner.png. The HTML is already complete and ready to screenshot at 1280x640.
