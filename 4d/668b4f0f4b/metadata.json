@@ -3,7 +3,7 @@
   "checkpoint_id": "4d668b4f0f4b",
   "strategy": "manual-commit",
   "branch": "feat/enhance-examples",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "examples/basic_usage.py",
     "examples/openai_proxy.py"
@@ -50,13 +50,20 @@
       "context": "/4d/668b4f0f4b/5/context.md",
       "content_hash": "/4d/668b4f0f4b/5/content_hash.txt",
       "prompt": "/4d/668b4f0f4b/5/prompt.txt"
+    },
+    {
+      "metadata": "/4d/668b4f0f4b/6/metadata.json",
+      "transcript": "/4d/668b4f0f4b/6/full.jsonl",
+      "context": "/4d/668b4f0f4b/6/context.md",
+      "content_hash": "/4d/668b4f0f4b/6/content_hash.txt",
+      "prompt": "/4d/668b4f0f4b/6/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 18,
-    "cache_creation_tokens": 168649,
-    "cache_read_tokens": 133916,
-    "output_tokens": 8,
-    "api_call_count": 6
+    "input_tokens": 21,
+    "cache_creation_tokens": 192162,
+    "cache_read_tokens": 159825,
+    "output_tokens": 9,
+    "api_call_count": 7
   }
 }
