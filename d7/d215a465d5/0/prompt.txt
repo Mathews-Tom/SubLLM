@@ -1,0 +1,277 @@
+We should update the README.md to properly reflect the update timing results:
+
+```
+CLAUDE CODE: `uv run examples/claude_code.py`
+```
+      Built subllm @ file:///Users/druk/WorkSpace/AetherForge/SubLLM
+Uninstalled 1 package in 1ms
+Installed 1 package in 2ms
+  ✓ claude-code: max (302ms)
+
+    claude-code Models    
+┏━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Model ID               ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ claude-code/opus-4-6   │
+│ claude-code/sonnet-4-5 │
+│ claude-code/haiku-4-5  │
+└────────────────────────┘
+
+╭────────────────────────────────────────────────────────────────────── Single-turn (non-streaming) ──────────────────────────────────────────────────────────────────────╮
+│ 2+2 equals 4.                                                                                                                                                           │
+╰───────────────────────────────────────────────────────────────────── claude-code/sonnet-4-5 · 6.4s ─────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────── Single-turn (streaming) ────────────────────────────────────────────────────────────────────────╮
+│ Elegant and clean,                                                                                                                                                      │
+│ Indentation matters most—                                                                                                                                               │
+│ Pythonic code flows.                                                                                                                                                    │
+╰───────────────────────────────────────────────────────────────────── claude-code/sonnet-4-5 · 6.5s ─────────────────────────────────────────────────────────────────────╯
+
+                                                      Multi-turn                                                       
+┏━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Turn ┃ Response                                                                                              ┃ Time ┃
+┡━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ 1    │ I'll remember the number 42. (I can see it's already noted in your memory file under Special Values!) │ 8.2s │
+│ 2    │ You asked me to remember the number 42.                                                               │ 3.3s │
+└──────┴───────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┘
+
+                Batch (3 parallel)                 
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Model                  ┃ Response        ┃ Time ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ claude-code/sonnet-4-5 │                 │      │
+│ claude-code/sonnet-4-5 │ Tokyo.Brasília. │      │
+│ claude-code/haiku-4-5  │ Paris.          │      │
+└────────────────────────┴─────────────────┴──────┘
+
+                      Timing Summary                       
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Operation           ┃ Model                  ┃ Duration ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Auth check          │ claude-code            │    302ms │
+│ Non-streaming       │ claude-code/sonnet-4-5 │     6.4s │
+│ Streaming           │ claude-code/sonnet-4-5 │     6.6s │
+│ Multi-turn (turn 1) │ claude-code/sonnet-4-5 │     8.2s │
+│ Multi-turn (turn 2) │ claude-code/sonnet-4-5 │     3.3s │
+│ Batch (3 parallel)  │ claude-code            │     8.3s │
+├─────────────────────┼────────────────────────┼──────────┤
+│ Total               │                        │    33.1s │
+└─────────────────────┴────────────────────────┴──────────┘
+```
+
+CODEX: `uv run examples/codex.py`
+```
+  ✓ codex: subscription (94ms)
+
+     codex Models      
+┏━━━━━━━━━━━━━━━━━━━━━┓
+┃ Model ID            ┃
+┡━━━━━━━━━━━━━━━━━━━━━┩
+│ codex/gpt-5.2       │
+│ codex/gpt-5.2-codex │
+│ codex/gpt-4.1       │
+│ codex/gpt-5-mini    │
+└─────────────────────┘
+
+╭────────────────────────────────────────────────────────────────────── Single-turn (non-streaming) ──────────────────────────────────────────────────────────────────────╮
+│ 2 + 2 equals 4.                                                                                                                                                         │
+╰───────────────────────────────────────────────────────────────────────── codex/gpt-5.2 · 7.0s ──────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────── Single-turn (streaming) ────────────────────────────────────────────────────────────────────────╮
+│ Silent snake coils tight,                                                                                                                                               │
+│ Indentations shape ideas—                                                                                                                                               │
+│ Bytes bloom into code.                                                                                                                                                  │
+╰───────────────────────────────────────────────────────────────────────── codex/gpt-5.2 · 8.7s ──────────────────────────────────────────────────────────────────────────╯
+
+                         Multi-turn                          
+┏━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Turn ┃ Response                                    ┃ Time ┃
+┡━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ 1    │ I’ll remember **42** for this conversation. │ 8.7s │
+│ 2    │ 42                                          │ 9.5s │
+└──────┴─────────────────────────────────────────────┴──────┘
+
+                                                                            Batch (3 parallel)                                                                             
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Model         ┃ Response                                                                                                                                         ┃ Time ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━┩
+│ codex/gpt-5.2 │ Paris                                                                                                                                            │      │
+│ codex/gpt-5.2 │ Tokyo                                                                                                                                            │      │
+│ error         │ Codex CLI failed (exit 1): 2026-02-15T23:10:00.615566Z ERROR codex_core::rollout::list: state db missing rollout path for thread                 │      │
+│               │ 019c61e6-39c7-70a0-8300-62ccad1b4170                                                                                                             │      │
+│               │ 2026-02-15T23:10:00.660090Z ERROR codex_core::rollout::list: state db missing rollout path for thread 019c6390-85ee-78a0-af65-63c5c2d76f8a       │      │
+│               │ 2026-02-15T23:10:00.696825Z ERROR codex_core::rollout::list: state db missing rollout path for thread 019c6130-4009-7562-bc0d-c92eff4be91e       │      │
+│               │ 2026-02-15T23:10:00.744998Z ERROR codex_core::rollout::list: state db missing rollout path for thread 019c6130-807c-7bf3-a736-ccede1d243ac       │      │
+│               │ 2026-02-15T23:10:00.791115Z ERROR codex_core::rollout::list: state db missing rollout path for thread 019c6229-c9cd-7ff3-ae3b-7df866a33a4c       │      │
+│               │ 2026-02-15T23:10:00.816017Z ERROR codex_core::rollout::list: state db missing rollout path for thread 019c6136-9d42-7110-8438-325011307f50       │      │
+└───────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┘
+
+                  Timing Summary                  
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Operation           ┃ Model         ┃ Duration ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Auth check          │ codex         │     94ms │
+│ Non-streaming       │ codex/gpt-5.2 │     7.0s │
+│ Streaming           │ codex/gpt-5.2 │     8.8s │
+│ Multi-turn (turn 1) │ codex/gpt-5.2 │     8.7s │
+│ Multi-turn (turn 2) │ codex/gpt-5.2 │     9.5s │
+│ Batch (3 parallel)  │ codex         │    10.1s │
+├─────────────────────┼───────────────┼──────────┤
+│ Total               │               │    44.2s │
+└─────────────────────┴───────────────┴──────────┘
+```
+
+GEMINI CLI: `uv run examples/gemini.py`
+```
+  ✓ gemini: google_oauth (2ms)
+
+          gemini Models          
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Model ID                      ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ gemini/gemini-3-pro-preview   │
+│ gemini/gemini-3-flash-preview │
+└───────────────────────────────┘
+
+╭────────────────────────── Single-turn (non-streaming) ──────────────────────────╮
+│ Two plus two is four.                                                           │
+╰───────────────────── gemini/gemini-3-flash-preview · 13.7s ─────────────────────╯
+
+╭──────────────────────────── Single-turn (streaming) ────────────────────────────╮
+│ Clean lines, simple flow,                                                       │
+│ Snake that builds the future world,                                             │
+│ Code that reads like prose.                                                     │
+╰───────────────────── gemini/gemini-3-flash-preview · 10.9s ─────────────────────╯
+
+                                    Multi-turn                                     
+┏━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Turn ┃ Response                                                         ┃  Time ┃
+┡━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ 1    │ I have completed my investigation of the codebase and am ready   │ 54.8s │
+│      │ to assist with any tasks. I've noted that the project is a       │       │
+│      │ multi-provider LLM router and have reviewed the core             │       │
+│      │ implementation files, examples, and CLI. I will also remember    │       │
+│      │ that the number is 42.                                           │       │
+│ 2    │ You asked me to remember the number 42.                          │ 12.2s │
+└──────┴──────────────────────────────────────────────────────────────────┴───────┘
+
+                Batch (3 parallel)                 
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━┓
+┃ Model                         ┃ Response ┃ Time ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━┩
+│ gemini/gemini-3-flash-preview │ Paris.   │      │
+│ gemini/gemini-3-flash-preview │ Tokyo    │      │
+│ gemini/gemini-3-pro-preview   │ Brasília │      │
+└───────────────────────────────┴──────────┴──────┘
+
+                          Timing Summary                          
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Operation           ┃ Model                         ┃ Duration ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Auth check          │ gemini                        │      2ms │
+│ Non-streaming       │ gemini/gemini-3-flash-preview │    13.7s │
+│ Streaming           │ gemini/gemini-3-flash-preview │    10.9s │
+│ Multi-turn (turn 1) │ gemini/gemini-3-flash-preview │    54.8s │
+│ Multi-turn (turn 2) │ gemini/gemini-3-flash-preview │    12.2s │
+│ Batch (3 parallel)  │ gemini                        │     9.6s │
+├─────────────────────┼───────────────────────────────┼──────────┤
+│ Total               │                               │   101.4s │
+└─────────────────────┴───────────────────────────────┴──────────┘
+```
+
+MULTI_PROVIDER: `uv run examples/multi_provider.py`
+```
+             Auth Status             
+┏━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃    ┃ Provider    ┃ Method / Error ┃
+┡━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ✓  │ claude-code │ max            │
+│ ✓  │ codex       │ subscription   │
+│ ✓  │ gemini      │ google_oauth   │
+└────┴─────────────┴────────────────┘
+Auth completed in 279ms
+
+             All Available Models              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃ Model ID                      ┃ Provider    ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
+│ claude-code/opus-4-6          │ claude-code │
+│ claude-code/sonnet-4-5        │ claude-code │
+│ claude-code/haiku-4-5         │ claude-code │
+│ codex/gpt-5.2                 │ codex       │
+│ codex/gpt-5.2-codex           │ codex       │
+│ codex/gpt-4.1                 │ codex       │
+│ codex/gpt-5-mini              │ codex       │
+│ gemini/gemini-3-pro-preview   │ gemini      │
+│ gemini/gemini-3-flash-preview │ gemini      │
+└───────────────────────────────┴─────────────┘
+
+             Same Prompt → Three Providers              
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━┓
+┃ Model                         ┃ Response      ┃ Time ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━┩
+│ claude-code/sonnet-4-5        │ 2+2 equals 4. │ 5.5s │
+│ codex/gpt-5.2                 │ 2+2 equals 4. │ 7.2s │
+│ gemini/gemini-3-flash-preview │ 2 + 2 is 4.   │ 8.2s │
+└───────────────────────────────┴───────────────┴──────┘
+
+╭────────────────────── Streaming — claude-code/sonnet-4-5 ───────────────────────╮
+│ Indents guide the code                                                          │
+│ Simple syntax, powerful tools                                                   │
+│ Serpent of logic                                                                │
+╰───────────────────────────────────── 6.0s ──────────────────────────────────────╯
+
+╭─────────────────────────── Streaming — codex/gpt-5.2 ───────────────────────────╮
+│ Silent serpent code                                                             │
+│ Indentations guide the flow                                                     │
+│ Batteries included                                                              │
+╰───────────────────────────────────── 6.9s ──────────────────────────────────────╯
+
+╭─────────────────── Streaming — gemini/gemini-3-flash-preview ───────────────────╮
+│ Indent leads the way,                                                           │
+│ Simple syntax, clear and bright,                                                │
+│ Snake of power flows.                                                           │
+╰───────────────────────────────────── 10.8s ─────────────────────────────────────╯
+
+                            Multi-turn Provider Handoff                            
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Turn         ┃ Model                       ┃ Response                   ┃  Time ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ 1 (remember) │ claude-code/sonnet-4-5      │ I can see that the number  │  6.5s │
+│              │                             │ 42 is already stored in    │       │
+│              │                             │ your memory file at        │       │
+│              │                             │ `/Users/druk/.claude/proj… │       │
+│              │                             │ under "Special Values"!    │       │
+│ 2 (recall)   │ codex/gpt-5.2               │ 42                         │ 10.8s │
+│ 3 (verify)   │ gemini/gemini-3-flash-prev… │ yes                        │ 14.8s │
+└──────────────┴─────────────────────────────┴────────────────────────────┴───────┘
+
+            Cross-provider Batch            
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                         ┃ Response ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ claude-code/sonnet-4-5        │ Paris.   │
+│ codex/gpt-5.2                 │ Tokyo    │
+│ gemini/gemini-3-flash-preview │ Brasília │
+└───────────────────────────────┴──────────┘
+
+                          Timing Summary                          
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Operation           ┃ Model                         ┃ Duration ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Auth check (all)    │ all                           │    279ms │
+│ Non-streaming       │ claude-code/sonnet-4-5        │     5.5s │
+│ Non-streaming       │ codex/gpt-5.2                 │     7.2s │
+│ Non-streaming       │ gemini/gemini-3-flash-preview │     8.2s │
+│ Streaming           │ claude-code/sonnet-4-5        │     6.0s │
+│ Streaming           │ codex/gpt-5.2                 │     6.9s │
+│ Streaming           │ gemini/gemini-3-flash-preview │    10.9s │
+│ Multi-turn (turn 1) │ claude-code/sonnet-4-5        │     6.5s │
+│ Multi-turn (turn 2) │ codex/gpt-5.2                 │    10.8s │
+│ Multi-turn (turn 3) │ gemini/gemini-3-flash-preview │    14.8s │
+│ Batch (3 parallel)  │ cross-provider                │     8.3s │
+├─────────────────────┼───────────────────────────────┼──────────┤
+│ Total               │                               │    85.3s │
+└─────────────────────┴───────────────────────────────┴──────────┘
+```
+```
