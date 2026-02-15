@@ -7,6 +7,7 @@ Multi-turn conversations use stateless message replay (all providers).
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 
 from subllm.providers.base import Provider, ProviderCapabilities
@@ -19,8 +20,11 @@ from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
 class Router:
     """Routes model requests to the correct provider based on model prefix."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, auth_cache_ttl: float = 300.0) -> None:
         self._providers: dict[str, Provider] = {}
+        self._auth_cache: list[AuthStatus] | None = None
+        self._auth_cache_time: float = 0.0
+        self._auth_cache_ttl: float = auth_cache_ttl
         self.register(ClaudeCodeProvider())
         self.register(CodexProvider())
         self.register(GeminiCLIProvider())
@@ -43,11 +47,49 @@ class Router:
         provider = self._providers.get(provider_name)
         return provider.capabilities if provider else None
 
-    async def check_auth(self) -> list[AuthStatus]:
-        results = []
-        for provider in self._providers.values():
-            results.append(await provider.check_auth())
+    async def check_auth(self, *, force: bool = False) -> list[AuthStatus]:
+        """Check auth for all providers concurrently, with TTL caching.
+
+        Args:
+            force: Bypass cache and re-run all auth checks.
+
+        Returns:
+            Auth status for each registered provider, in registration order.
+        """
+        now = time.monotonic()
+        if (
+            not force
+            and self._auth_cache is not None
+            and (now - self._auth_cache_time) < self._auth_cache_ttl
+        ):
+            return self._auth_cache
+
+        results = list(await asyncio.gather(
+            *(provider.check_auth() for provider in self._providers.values())
+        ))
+        self._auth_cache = results
+        self._auth_cache_time = time.monotonic()
         return results
+
+    async def check_auth_provider(self, provider_name: str) -> AuthStatus:
+        """Check auth for a single provider by name.
+
+        Args:
+            provider_name: Registered provider name (e.g. "claude-code", "codex", "gemini").
+
+        Returns:
+            Auth status for the specified provider.
+
+        Raises:
+            ValueError: If provider_name is not registered.
+        """
+        provider = self._providers.get(provider_name)
+        if provider is None:
+            raise ValueError(
+                f"Unknown provider '{provider_name}'. "
+                f"Available: {', '.join(self._providers)}"
+            )
+        return await provider.check_auth()
 
     def _resolve(self, model: str) -> tuple[Provider, str]:
         """Parse 'provider/model' and return (provider_instance, model_alias)."""
@@ -132,7 +174,7 @@ async def completion(
     max_tokens: int | None = None,
     temperature: float | None = None,
 ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
-    """LiteLLM-style completion function.
+    """OpenAI-compatible completion function.
 
     Usage:
         response = await subllm.completion(
@@ -174,8 +216,14 @@ def list_models() -> list[dict]:
     return _router.list_models()
 
 
-async def check_auth() -> list[AuthStatus]:
-    return await _router.check_auth()
+async def check_auth(*, force: bool = False) -> list[AuthStatus]:
+    """Check auth for all providers (parallel, cached with TTL)."""
+    return await _router.check_auth(force=force)
+
+
+async def check_auth_provider(provider_name: str) -> AuthStatus:
+    """Check auth for a single provider by name."""
+    return await _router.check_auth_provider(provider_name)
 
 
 def get_router() -> Router:

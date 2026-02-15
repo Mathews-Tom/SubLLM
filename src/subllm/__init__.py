@@ -31,7 +31,15 @@ Usage:
 from __future__ import annotations
 
 from subllm.providers.base import Provider, ProviderCapabilities
-from subllm.router import Router, batch, check_auth, completion, get_router, list_models
+from subllm.router import (
+    Router,
+    batch,
+    check_auth,
+    check_auth_provider,
+    completion,
+    get_router,
+    list_models,
+)
 from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
 
 __version__ = "0.2.0"
@@ -42,6 +50,7 @@ __all__ = [
     "Router",
     "batch",
     "check_auth",
+    "check_auth_provider",
     "completion",
     "get_router",
     "list_models",
