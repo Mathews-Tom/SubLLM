@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "8288cc2b6fed",
+  "strategy": "manual-commit",
+  "branch": "experiment/agent-sdk-perf",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "pyproject.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/82/88cc2b6fed/0/metadata.json",
+      "transcript": "/82/88cc2b6fed/0/full.jsonl",
+      "context": "/82/88cc2b6fed/0/context.md",
+      "content_hash": "/82/88cc2b6fed/0/content_hash.txt",
+      "prompt": "/82/88cc2b6fed/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 6785,
+    "cache_read_tokens": 558784,
+    "output_tokens": 212,
+    "api_call_count": 6
+  }
+}

@@ -1,0 +1,91 @@
+Implement the following plan:
+
+# Plan: Remove CLI subprocess path, SDK-only for Claude Code provider
+
+## Context
+
+Benchmark results confirmed SDK path is 42-76% faster across all single-request workloads (warm call: -75.6%, cold start: -66.8%, multi-turn: -64.5%). The `use_sdk` toggle and CLI subprocess inference path are now dead weight. Making `claude-agent-sdk` a hard dependency per user decision.
+
+Auth checking (`_check_auth_fast`, `_check_auth_slow`) still uses lightweight CLI subprocess calls (`claude auth status`) — these stay, as the SDK doesn't expose an auth-check API.
+
+## Changes
+
+### 1. `pyproject.toml`
+- Move `claude-agent-sdk>=0.1.30` from `optional-dependencies.sdk` to `dependencies`
+- Remove the `sdk` optional group
+
+### 2. `src/subllm/providers/claude_code.py` (bulk of the work)
+**Remove:**
+- `use_sdk` constructor param and `_use_sdk` field
+- `_build_cli_args()` method (L239-251)
+- `_complete_cli()` method (L253-280)
+- `_stream_cli()` method (L282-330)
+- CLI/SDK branching in `complete()` and `stream()`
+- `try/except ImportError` guards in SDK methods
+
+**Refactor:**
+- Move SDK imports to module level (no longer deferred): `ClaudeSDKClient`, `ClaudeAgentOptions` from `claude_agent_sdk`; `AssistantMessage`, `TextBlock`, `ResultMessage` from `claude_agent_sdk.types`
+- Type `_sdk_client` as `ClaudeSDKClient | None` (not `Any`)
+- Rename `_complete_sdk` → `_complete`, `_stream_sdk` → `_stream_impl`
+- `complete()` calls `_complete()` directly; `stream()` yields from `_stream_impl()` directly
+- Update module docstring to reflect SDK-only architecture
+- Remove `json` import (only used by CLI path and auth — auth still needs it, keep if so)
+
+**Keep unchanged:**
+- `_build_env()` — used by auth check subprocess calls
+- `check_auth()`, `_check_auth_fast()`, `_check_auth_slow()` — CLI subprocess for auth stays
+- `close()` — already correct
+- `_build_sdk_options()`, `_ensure_sdk_client()` — already correct
+- Constructor params: `cli_path`, `env_overrides`, `thinking`, `thinking_budget`, `effort`
+
+### 3. `src/subllm/router.py`
+- Remove `sdk_mode` param from `Router.__init__()` — always `ClaudeCodeProvider()` (SDK is the only path)
+- Module-level `_router = Router()` stays unchanged
+
+### 4. `benchmarks/sdk_vs_cli.py`
+- Archive: rename to `benchmarks/sdk_vs_cli_archived.py` to preserve results without breaking imports
+- The file references `use_sdk=False/True` which will no longer exist
+
+## Files
+
+| File | Action |
+|------|--------|
+| `pyproject.toml` | Move SDK to hard dep, remove `sdk` extra |
+| `src/subllm/providers/claude_code.py` | Remove CLI path, top-level SDK imports, simplify |
+| `src/subllm/router.py` | Remove `sdk_mode` param |
+| `benchmarks/sdk_vs_cli.py` | Rename to `_archived.py` |
+
+## Verification
+
+1. `uv run python -c "import subllm; print(subllm.list_models())"` — imports without `--extra sdk`
+2. `uv run python -c "from claude_agent_sdk import ClaudeSDKClient"` — hard dep available
+3. `uv run python examples/claude_code.py` — smoke test completion + streaming
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/druk/.REDACTED.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+Great. we can remove benchmarking script. Have we completely switched CLI to SDK for Claude?
+
+---
+
+Great. Update the README.md file.
+
+---
+
+Great. Let us commit all the changes and lets publish a new package.
+
+---
+
+[Request interrupted by user]
+
+---
+
+Great. Let us commit all the changes and lets publish a new version of the package.
+
+---
+
+Let us use twine as a dev dependency to publiish package.
