@@ -32,12 +32,9 @@ from subllm.types import (
 )
 
 _MODEL_MAP: dict[str, str] = {
-    "sonnet": "claude-sonnet-4-5-20250929",
     "opus": "claude-opus-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-    "sonnet-4.5": "claude-sonnet-4-5-20250929",
-    "opus-4.5": "claude-opus-4-6",
-    "haiku-4.5": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-5",
+    "haiku": "claude-haiku-4-5",
 }
 
 
@@ -79,6 +76,7 @@ class ClaudeCodeProvider(Provider):
 
     def _build_env(self) -> dict[str, str]:
         env = os.environ.copy()
+        env.pop("CLAUDECODE", None)
         env.update(self._env_overrides)
         if env.get("SUBLLM_FORCE_SUBSCRIPTION"):
             env.pop("ANTHROPIC_API_KEY", None)
@@ -167,6 +165,8 @@ class ClaudeCodeProvider(Provider):
             self._cli_path, "--print", "-p", prompt,
             "--model", resolved, "--max-turns", "1", "--output-format", output_format,
         ]
+        if output_format == "stream-json":
+            args.append("--verbose")
         if max_tokens:
             args.extend(["--max-tokens", str(max_tokens)])
         return args
@@ -232,11 +232,8 @@ class ClaudeCodeProvider(Provider):
                                 ))],
                             )
                             first = False
-                elif event.get("type") == "result" and event.get("result"):
-                    yield ChatCompletionChunk(
-                        id=chunk_id, model=f"claude-code/{model}",
-                        choices=[StreamChoice(delta=Delta(content=event["result"]))],
-                    )
+                elif event.get("type") == "result":
+                    continue  # Summary event — content already yielded via assistant message
             except json.JSONDecodeError:
                 if line:
                     yield ChatCompletionChunk(
