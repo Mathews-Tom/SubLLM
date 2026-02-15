@@ -164,6 +164,60 @@ results = await subllm.batch([
 
 Runs completions in parallel with a concurrency semaphore. Each provider's CLI handles its own rate limiting internally.
 
+## Benchmarks
+
+Measured on macOS. Timings include full CLI subprocess overhead (spawn, auth, inference, response parsing). Single run — expect variance across sessions.
+
+### Auth Check
+
+| Provider    | Method               | Latency |
+| ----------- | -------------------- | ------- |
+| claude-code | `claude auth status` | ~266ms  |
+| codex       | subscription check   | ~97ms   |
+| gemini      | OAuth credential file | ~2ms   |
+| **all (parallel)** | **`asyncio.gather`** | **~270ms** |
+
+Auth is bounded by the slowest provider. Previous sequential approach with inference roundtrips: ~30s total.
+
+### Completion
+
+| Provider    | Model                         | Non-streaming | Streaming |
+| ----------- | ----------------------------- | ------------- | --------- |
+| claude-code | `sonnet-4-5`                  | ~13-17s       | ~9-15s    |
+| codex       | `gpt-5.2`                     | ~11-15s       | ~11-12s   |
+| gemini      | `gemini-3-flash-preview`      | ~8-9s         | ~8-9s     |
+
+### Multi-turn
+
+| Provider    | Model                         | Turn 1 | Turn 2 |
+| ----------- | ----------------------------- | ------ | ------ |
+| claude-code | `sonnet-4-5`                  | ~16s   | ~14s   |
+| codex       | `gpt-5.2`                     | ~15s   | ~12s   |
+| gemini      | `gemini-3-flash-preview`      | ~13s   | ~14s   |
+
+Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 context.
+
+### Cross-provider Handoff
+
+Message history replayed across different providers within a single conversation:
+
+| Turn           | Provider                        | Latency |
+| -------------- | ------------------------------- | ------- |
+| 1 (remember)   | `claude-code/sonnet-4-5`        | ~16s    |
+| 2 (recall)     | `codex/gpt-5.2`                | ~11s    |
+| 3 (verify)     | `gemini/gemini-3-flash-preview` | ~14s    |
+
+### Batch (3 parallel completions)
+
+| Scope          | Latency |
+| -------------- | ------- |
+| claude-code    | ~17s    |
+| codex          | ~14s    |
+| gemini         | ~9s     |
+| cross-provider | ~14s    |
+
+Parallel execution bounded by the slowest request.
+
 ## Terms of Service & Disclaimer
 
 SubLLM routes completion calls through CLI tools that authenticate via your subscription. It does not circumvent authentication, store credentials, or proxy third-party access. **Users are responsible for compliance with each provider's terms of service.**
