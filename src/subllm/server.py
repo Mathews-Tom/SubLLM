@@ -6,7 +6,7 @@ Then use with ANY OpenAI-compatible client:
     from openai import OpenAI
     client = OpenAI(base_url="http://localhost:8080/v1", api_key="unused")
     response = client.chat.completions.create(
-        model="claude-code/sonnet",
+        model="claude-code/sonnet-4-5",
         messages=[{"role": "user", "content": "hello"}],
     )
 """
@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     async def chat_completions(request: Request):
         body = await request.json()
 
-        model = body.get("model", "claude-code/sonnet")
+        model = body.get("model", "claude-code/sonnet-4-5")
         messages = body.get("messages", [])
         stream = body.get("stream", False)
         max_tokens = body.get("max_tokens")

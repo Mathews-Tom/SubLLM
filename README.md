@@ -68,14 +68,14 @@ import subllm
 async def main():
     # Non-streaming
     response = await subllm.completion(
-        model="claude-code/sonnet",
+        model="claude-code/sonnet-4-5",
         messages=[{"role": "user", "content": "Explain monads in one sentence"}],
     )
     print(response.choices[0].message.content)
 
     # Streaming
     stream = await subllm.completion(
-        model="gemini/flash",
+        model="gemini/gemini-3-flash-preview",
         messages=[{"role": "user", "content": "Write a haiku about Rust"}],
         stream=True,
     )
@@ -90,8 +90,8 @@ asyncio.run(main())
 ```bash
 subllm auth                                        # Check all providers
 subllm models                                      # List available models
-subllm complete "What is 2+2?" -m claude-code/sonnet
-subllm complete "Write a haiku" -m gemini/flash --stream
+subllm complete "What is 2+2?" -m claude-code/sonnet-4-5
+subllm complete "Write a haiku" -m gemini/gemini-3-flash-preview --stream
 ```
 
 **OpenAI-compatible proxy:**
@@ -103,7 +103,7 @@ subllm serve --port 8080
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8080/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="claude-code/sonnet",
+    model="claude-code/sonnet-4-5",
     messages=[{"role": "user", "content": "hello"}],
 )
 ```
@@ -112,15 +112,15 @@ response = client.chat.completions.create(
 
 | Model ID               | Backend                    | Auth                              |
 | ---------------------- | -------------------------- | --------------------------------- |
-| `claude-code/opus`     | Claude Opus 4.6            | Claude Max ($200)                 |
-| `claude-code/sonnet`   | Claude Sonnet 4.5          | Claude Pro ($20) / Max ($100-200) |
-| `claude-code/haiku`    | Claude Haiku 4.5           | Claude Pro ($20) / Max ($100-200) |
+| `claude-code/opus-4-6`     | Claude Opus 4.6            | Claude Max ($200)                 |
+| `claude-code/sonnet-4-5`   | Claude Sonnet 4.5          | Claude Pro ($20) / Max ($100-200) |
+| `claude-code/haiku-4-5`    | Claude Haiku 4.5           | Claude Pro ($20) / Max ($100-200) |
 | `codex/gpt-5.2`       | GPT-5.2                    | ChatGPT Plus ($20) / Pro ($200)   |
 | `codex/gpt-5.2-codex` | GPT-5.2-Codex              | ChatGPT Plus ($20) / Pro ($200)   |
 | `codex/gpt-4.1`       | GPT-4.1                    | ChatGPT Plus ($20) / Pro ($200)   |
 | `codex/gpt-5-mini`    | GPT-5 Mini                 | ChatGPT Plus ($20) / Pro ($200)   |
-| `gemini/pro`          | Gemini 3 Pro Preview       | API key / AI Pro / AI Ultra       |
-| `gemini/flash`        | Gemini 3 Flash Preview     | API key / AI Pro / AI Ultra       |
+| `gemini/gemini-3-pro-preview`          | Gemini 3 Pro Preview       | API key / AI Pro / AI Ultra       |
+| `gemini/gemini-3-flash-preview`        | Gemini 3 Flash Preview     | API key / AI Pro / AI Ultra       |
 
 ## Architecture
 
@@ -141,9 +141,9 @@ All providers delegate auth entirely to the underlying CLIs. SubLLM never stores
 
 ```python
 results = await subllm.batch([
-    {"model": "claude-code/sonnet", "messages": [...]},
-    {"model": "gemini/flash", "messages": [...]},
-    {"model": "codex/gpt-5.2-codex", "messages": [...]},
+    {"model": "claude-code/sonnet-4-5", "messages": [...]},
+    {"model": "gemini/gemini-3-flash-preview", "messages": [...]},
+    {"model": "codex/gpt-5.2", "messages": [...]},
 ], concurrency=5)
 ```
 

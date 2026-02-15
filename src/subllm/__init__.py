@@ -7,14 +7,14 @@ Usage:
 
     # Non-streaming
     response = await subllm.completion(
-        model="claude-code/sonnet",
+        model="claude-code/sonnet-4-5",
         messages=[{"role": "user", "content": "Hello"}],
     )
     print(response.choices[0].message.content)
 
     # Streaming
     async for chunk in await subllm.completion(
-        model="gemini/flash",
+        model="gemini/gemini-3-flash-preview",
         messages=[{"role": "user", "content": "Hello"}],
         stream=True,
     ):
@@ -22,9 +22,9 @@ Usage:
 
     # Batch (parallel across providers)
     results = await subllm.batch([
-        {"model": "claude-code/sonnet", "messages": [...]},
-        {"model": "gemini/flash", "messages": [...]},
-        {"model": "codex/gpt-5.3", "messages": [...]},
+        {"model": "claude-code/sonnet-4-5", "messages": [...]},
+        {"model": "gemini/gemini-3-flash-preview", "messages": [...]},
+        {"model": "codex/gpt-5.2", "messages": [...]},
     ], concurrency=5)
 """
 

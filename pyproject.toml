@@ -35,3 +35,8 @@ packages = ["src/subllm"]
 [tool.ruff]
 target-version = "py310"
 line-length = 100
+
+[dependency-groups]
+dev = [
+    "rich>=14.3.2",
+]

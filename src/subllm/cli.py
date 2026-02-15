@@ -71,7 +71,7 @@ def main() -> None:
 
     p_complete = sub.add_parser("complete", help="Run a completion")
     p_complete.add_argument("prompt", help="Prompt text")
-    p_complete.add_argument("-m", "--model", default="claude-code/sonnet", help="Model to use")
+    p_complete.add_argument("-m", "--model", default="claude-code/sonnet-4-5", help="Model to use")
     p_complete.add_argument("-s", "--stream", action="store_true", help="Stream output")
 
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible proxy server")
