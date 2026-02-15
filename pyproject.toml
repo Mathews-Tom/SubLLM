@@ -34,7 +34,7 @@ Issues = "https://github.com/Mathews-Tom/SubLLM/issues"
 
 [project.optional-dependencies]
 server = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
-dev = ["pytest", "pytest-asyncio", "ruff"]
+dev = ["pytest", "pytest-asyncio", "ruff", "twine"]
 
 [project.scripts]
 subllm = "subllm.cli:main"
