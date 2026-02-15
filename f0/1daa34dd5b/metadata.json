@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "f01daa34dd5b",
+  "strategy": "manual-commit",
+  "branch": "experiment/agent-sdk-perf",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "benchmarks/RESULTS.md",
+    "benchmarks/sdk_vs_cli.py",
+    "pyproject.toml",
+    "src/subllm/__init__.py",
+    "src/subllm/providers/base.py",
+    "src/subllm/providers/claude_code.py",
+    "src/subllm/router.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/1daa34dd5b/0/metadata.json",
+      "transcript": "/f0/1daa34dd5b/0/full.jsonl",
+      "context": "/f0/1daa34dd5b/0/context.md",
+      "content_hash": "/f0/1daa34dd5b/0/content_hash.txt",
+      "prompt": "/f0/1daa34dd5b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2666,
+    "cache_creation_tokens": 154634,
+    "cache_read_tokens": 3572265,
+    "output_tokens": 4485,
+    "api_call_count": 42
+  }
+}

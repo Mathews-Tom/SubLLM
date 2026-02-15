@@ -1,0 +1,236 @@
+Implement the following plan:
+
+# Experiment: claude-agent-sdk Performance Evaluation for SubLLM
+
+## Context
+
+SubLLM v0.3.0 already has a basic `claude-agent-sdk` integration path (`use_sdk=True` on `ClaudeCodeProvider`), declared as optional dependency `claude-agent-sdk>=0.1.0`. The current SDK integration is minimal — it only uses `query()` with `ClaudeAgentOptions`, missing most performance-relevant features the SDK now offers (v0.1.36). The CLI subprocess path remains the default.
+
+**Goal:** Determine whether upgrading and fully leveraging the Agent SDK improves latency, throughput, and resource usage compared to the CLI subprocess path. Run benchmarks on a local experiment branch.
+
+---
+
+## Current State
+
+| Aspect | CLI Path (default) | SDK Path (current) |
+|--------|-------------------|-------------------|
+| Transport | Subprocess spawn per call | Subprocess via SDK transport |
+| Streaming | JSON line parsing over stdout | `query()` async iterator |
+| Session reuse | None (new process each call) | None (new `query()` each call) |
+| Error handling | Exit code + stderr parsing | Generic `hasattr` checks |
+| Token counting | ~4 chars/token estimate | Same estimate |
+| Thinking control | Not exposed | Not exposed |
+| Effort control | Not exposed | Not exposed |
+| Hooks | Not available | Not wired |
+
+**Key gap:** The SDK path spawns a fresh `query()` per call, providing no advantage over CLI subprocess. The real benefit comes from `ClaudeSDKClient` which maintains a persistent subprocess connection.
+
+---
+
+## Experiment Plan
+
+### Branch: `experiment/agent-sdk-perf`
+
+### Step 1 — Setup & Dependency Update
+**Files:** `pyproject.toml`
+
+- Pin SDK dependency to `claude-agent-sdk>=0.1.30` (ensures thinking/effort features)
+- Install with `uv add --optional sdk claude-agent-sdk>=0.1.30`
+
+### Step 2 — Enhanced SDK Integration in Provider
+**File:** `src/subllm/providers/claude_code.py`
+
+Upgrade `_complete_sdk()` and `_stream_sdk()` to use `ClaudeSDKClient` instead of `query()`:
+
+1. **Persistent client connection** — `ClaudeSDKClient` maintains a warm subprocess, eliminating per-call spawn overhead. Add `_sdk_client: ClaudeSDKClient | None` to provider state. Connect on first use, reuse across calls.
+2. **Proper message type handling** — Replace `hasattr(message, "content")` / `hasattr(block, "text")` with typed imports: `AssistantMessage`, `TextBlock`, `ToolUseBlock`.
+3. **Thinking/effort configuration** — Expose `thinking` and `effort` parameters through the provider interface. Map to `ThinkingConfigAdaptive` / `ThinkingConfigEnabled` / effort levels.
+4. **Permission mode** — Set `permission_mode="bypassPermissions"` for non-interactive backend use (SubLLM is a programmatic proxy, not interactive).
+5. **Error handling** — Catch SDK-specific errors (`ClaudeSDKError`, `ProcessError`, `CLIConnectionError`) and map to SubLLM error types.
+6. **Graceful shutdown** — Add `async def close()` to disconnect the persistent client.
+
+### Step 3 — Benchmark Script
+**File:** `benchmarks/sdk_vs_cli.py` (new)
+
+Comparative benchmark measuring:
+
+| Metric | How |
+|--------|-----|
+| **Cold start latency** | First call after fresh init (CLI subprocess spawn vs SDK client connect) |
+| **Warm call latency** | Subsequent calls (new subprocess vs reused SDK client) |
+| **Streaming TTFB** | Time to first token for streaming calls |
+| **Batch throughput** | 5 parallel requests via `subllm.batch()` |
+| **Multi-turn overhead** | 3-turn conversation (message replay cost) |
+
+Structure:
+```python
+# For each test: run N iterations, collect p50/p95/p99 latencies
+# Compare: ClaudeCodeProvider(use_sdk=False) vs ClaudeCodeProvider(use_sdk=True)
+# Output: rich table with side-by-side results
+```
+
+### Step 4 — Router Integration
+**File:** `src/subllm/router.py`
+
+- Add `sdk_mode: bool = False` parameter to `Router.__init__()` that passes through to `ClaudeCodeProvider(use_sdk=sdk_mode)`
+- Add `Router.close()` async method that calls `provider.close()` on all providers (for SDK client cleanup)
+- Expose via module-level `subllm.close()` function
+
+### Step 5 — Run Benchmarks & Collect Data
+
+Execute benchmark suite on local machine:
+```bash
+uv run python benchmarks/sdk_vs_cli.py
+```
+
+Record results in `benchmarks/RESULTS.md` for comparison.
+
+---
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `pyproject.toml` | Pin `claude-agent-sdk>=0.1.30` |
+| `src/subllm/providers/claude_code.py` | Upgrade SDK path with `ClaudeSDKClient`, typed messages, thinking/effort, error handling |
+| `src/subllm/providers/base.py` | Add `close()` method to abstract `Provider` |
+| `src/subllm/router.py` | Add `sdk_mode` param, `close()` method, module-level `close()` |
+| `src/subllm/__init__.py` | Export `close()` |
+| `benchmarks/sdk_vs_cli.py` | New benchmark script |
+
+## Existing Code to Reuse
+
+- `messages_to_prompt()` from `src/subllm/providers/base.py:L60-80` — prompt serialization
+- `estimate_tokens()` from `src/subllm/providers/base.py` — token estimation
+- `_build_env()` from `claude_code.py:L77-83` — environment construction
+- `_MODEL_MAP` from `claude_code.py:L34-38` — model alias resolution
+- `ChatCompletionResponse`, `ChatCompletionChunk` types from `src/subllm/types.py`
+
+## Verification
+
+1. **Unit test**: `uv run python -c "import subllm; print(subllm.list_models())"` — confirm SDK import path works
+2. **Smoke test**: Run existing `examples/claude_code.py` with both `use_sdk=False` and `use_sdk=True`
+3. **Benchmark**: `uv run python benchmarks/sdk_vs_cli.py` — collect and compare metrics
+4. **Streaming**: Verify streaming output is character-by-character identical between CLI and SDK paths
+
+## Expected Outcomes
+
+**Likely wins:**
+- Warm call latency reduction (no subprocess spawn overhead on reused client)
+- Better error messages (typed SDK exceptions vs stderr parsing)
+- Thinking/effort control (new capability, not available via CLI path)
+
+**Uncertain:**
+- Cold start may be similar or slower (SDK client init has its own overhead)
+- TTFB may not differ much (bottleneck is model inference, not transport)
+
+**Decision criteria:** If warm call latency improves by >20%, the SDK path is worth making default. If <10% difference, keep CLI as default but maintain SDK as optional for users who need thinking/effort control.
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/druk/.REDACTED.jsonl
+
+If this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.
+
+---
+
+uv run python benchmarks/sdk_vs_cli.py
+SubLLM SDK vs CLI Benchmark
+Model: sonnet-4-5 | Iterations: 3
+
+1. Cold start latency
+  cold start iteration 1/3
+Traceback (most recent call last):
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/benchmarks/sdk_vs_cli.py", line 372, in <module>
+    asyncio.run(main(args.model, args.iterations))
+  File "/Users/druk/.local/share/uv/python/cpython-3.12.8-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/druk/.local/share/uv/python/cpython-3.12.8-macos-aarch64-none/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/druk/.local/share/uv/python/cpython-3.12.8-macos-aarch64-none/lib/python3.12/asyncio/base_events.py", line 686, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/benchmarks/sdk_vs_cli.py", line 334, in main
+    cold = await bench_cold_start(model, iterations)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/benchmarks/sdk_vs_cli.py", line 140, in bench_cold_start
+    ms, _ = await _measure_complete(sdk_provider, model, messages)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/benchmarks/sdk_vs_cli.py", line 92, in _measure_complete
+    resp = await provider.complete(messages, model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/src/subllm/providers/claude_code.py", line 204, in complete
+    return await self._complete_sdk(messages, model, system_prompt=system_prompt)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/druk/WorkSpace/AetherForge/SubLLM/src/subllm/providers/claude_code.py", line 387, in _complete_sdk
+    raise ImportError(
+ImportError: claude-agent-sdk not installed or version too old. Run: uv add 'subllm[sdk]'
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+I ran the benchmarking script manually. Here are the results:
+
+$ uv run --extra sdk python benchmarks/sdk_vs_cli.py
+
+```
+SubLLM SDK vs CLI Benchmark
+Model: sonnet-4-5 | Iterations: 3
+
+1. Cold start latency
+  cold start iteration 1/3
+  cold start iteration 2/3
+  cold start iteration 3/3
+
+2. Warm call latency
+  warming SDK client...
+  warm call iteration 1/3
+  warm call iteration 2/3
+  warm call iteration 3/3
+
+3. Streaming TTFB
+  warming SDK client...
+  stream TTFB iteration 1/3
+  stream TTFB iteration 2/3
+  stream TTFB iteration 3/3
+
+4. Batch throughput
+  CLI batch (5 parallel)...
+  SDK batch (5 sequential through persistent client)...
+
+5. Multi-turn overhead
+  CLI multi-turn...
+  SDK multi-turn...
+
+                         SDK vs CLI Benchmark Results                          
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━┳━━━━━━━━┓
+┃ Benchmark            ┃ Path ┃   Mean ┃    p50 ┃    p95 ┃ Stdev ┃ N ┃  Delta ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━╇━━━━━━━━┩
+│ Cold start           │ CLI  │ 13.90s │ 13.94s │ 14.79s │ 904ms │ 3 │        │
+│                      │ SDK  │  4.61s │  4.53s │  4.78s │ 147ms │ 3 │ -66.8% │
+├──────────────────────┼──────┼────────┼────────┼────────┼───────┼───┼────────┤
+│ Warm call            │ CLI  │ 13.22s │ 12.64s │ 14.71s │ 1.30s │ 3 │        │
+│                      │ SDK  │  3.22s │  3.24s │  3.29s │  77ms │ 3 │ -75.6% │
+├──────────────────────┼──────┼────────┼────────┼────────┼───────┼───┼────────┤
+│ Stream TTFB          │ CLI  │  9.14s │  8.68s │ 10.24s │ 956ms │ 3 │        │
+│                      │ SDK  │  5.23s │  5.30s │  5.82s │ 630ms │ 3 │ -42.8% │
+├──────────────────────┼──────┼────────┼────────┼────────┼───────┼───┼────────┤
+│ Batch (5 parallel)   │ CLI  │ 16.92s │ 16.92s │ 16.92s │   0ms │ 1 │        │
+│                      │ SDK  │ 18.96s │ 18.96s │ 18.96s │   0ms │ 1 │ +12.1% │
+├──────────────────────┼──────┼────────┼────────┼────────┼───────┼───┼────────┤
+│ Multi-turn (3 turns) │ CLI  │ 47.11s │ 47.11s │ 47.11s │   0ms │ 1 │        │
+│                      │ SDK  │ 16.71s │ 16.71s │ 16.71s │   0ms │ 1 │ -64.5% │
+└──────────────────────┴──────┴────────┴────────┴────────┴───────┴───┴────────┘
+```
+
+---
+
+Great. I think we are ready to completely move from CLI to SDK for claude.
+
+---
+
+[Request interrupted by user for tool use]
