@@ -32,9 +32,9 @@ from subllm.types import (
 )
 
 _MODEL_MAP: dict[str, str] = {
-    "opus": "claude-opus-4-6",
-    "sonnet": "claude-sonnet-4-5",
-    "haiku": "claude-haiku-4-5",
+    "opus-4-6": "claude-opus-4-6",
+    "sonnet-4-5": "claude-sonnet-4-5",
+    "haiku-4-5": "claude-haiku-4-5",
 }
 
 

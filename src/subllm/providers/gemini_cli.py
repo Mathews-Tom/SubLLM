@@ -32,8 +32,8 @@ from subllm.types import (
 )
 
 _MODEL_MAP: dict[str, str] = {
-    "pro": "gemini-3-pro-preview",
-    "flash": "gemini-3-flash-preview",
+    "gemini-3-pro-preview": "gemini-3-pro-preview",
+    "gemini-3-flash-preview": "gemini-3-flash-preview",
 }
 
 
