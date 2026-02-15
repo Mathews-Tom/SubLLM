@@ -19,9 +19,9 @@ SubLLM is ideal for: development, prototyping, batch jobs, CI/CD, personal autom
 ### 1. Install
 
 ```bash
-pip install subllm              # Core (CLI subprocess mode)
-pip install subllm[server]      # + OpenAI-compatible proxy server
-pip install subllm[sdk]         # + Claude Agent SDK integration
+uv add subllm              # Core (CLI subprocess mode)
+uv add subllm[server]      # + OpenAI-compatible proxy server
+uv add subllm[sdk]         # + Claude Agent SDK integration
 ```
 
 ### 2. Authenticate Your CLIs
@@ -53,7 +53,7 @@ codex login
 ```bash
 npm install -g @anthropic-ai/gemini-cli
 gemini                           # Complete Google login
-# Or use free tier with API key:
+# Or use API key:
 export GEMINI_API_KEY="your-key"
 ```
 
@@ -110,17 +110,17 @@ response = client.chat.completions.create(
 
 ## Available Models
 
-| Model ID              | Backend                  | Auth                              |
-| --------------------- | ------------------------ | --------------------------------- |
-| `claude-code/sonnet`  | Claude Sonnet 4.5        | Claude Pro ($20) / Max ($100-200) |
-| `claude-code/opus`    | Claude Opus 4.5          | Claude Max ($200)                 |
-| `claude-code/haiku`   | Claude Haiku 4.5         | Claude Pro ($20) / Max ($100-200) |
-| `codex/gpt-5.3`       | GPT-5.3-Codex            | ChatGPT Plus ($20) / Pro ($200)   |
-| `codex/gpt-5.3-spark` | GPT-5.3-Codex-Spark      | ChatGPT Pro ($200)                |
-| `gemini/2.5-pro`      | Gemini 2.5 Pro (1M ctx)  | Free tier / AI Pro / AI Ultra     |
-| `gemini/2.5-flash`    | Gemini 2.5 Flash         | Free tier / AI Pro / AI Ultra     |
-| `gemini/flash`        | Gemini 2.5 Flash (alias) | Free tier / AI Pro / AI Ultra     |
-| `gemini/pro`          | Gemini 2.5 Pro (alias)   | Free tier / AI Pro / AI Ultra     |
+| Model ID               | Backend                    | Auth                              |
+| ---------------------- | -------------------------- | --------------------------------- |
+| `claude-code/opus`     | Claude Opus 4.6            | Claude Max ($200)                 |
+| `claude-code/sonnet`   | Claude Sonnet 4.5          | Claude Pro ($20) / Max ($100-200) |
+| `claude-code/haiku`    | Claude Haiku 4.5           | Claude Pro ($20) / Max ($100-200) |
+| `codex/gpt-5.2`       | GPT-5.2                    | ChatGPT Plus ($20) / Pro ($200)   |
+| `codex/gpt-5.2-codex` | GPT-5.2-Codex              | ChatGPT Plus ($20) / Pro ($200)   |
+| `codex/gpt-4.1`       | GPT-4.1                    | ChatGPT Plus ($20) / Pro ($200)   |
+| `codex/gpt-5-mini`    | GPT-5 Mini                 | ChatGPT Plus ($20) / Pro ($200)   |
+| `gemini/pro`          | Gemini 3 Pro Preview       | API key / AI Pro / AI Ultra       |
+| `gemini/flash`        | Gemini 3 Flash Preview     | API key / AI Pro / AI Ultra       |
 
 ## Architecture
 
@@ -143,7 +143,7 @@ All providers delegate auth entirely to the underlying CLIs. SubLLM never stores
 results = await subllm.batch([
     {"model": "claude-code/sonnet", "messages": [...]},
     {"model": "gemini/flash", "messages": [...]},
-    {"model": "codex/gpt-5.3", "messages": [...]},
+    {"model": "codex/gpt-5.2-codex", "messages": [...]},
 ], concurrency=5)
 ```
 
@@ -153,7 +153,7 @@ Runs completions in parallel with a concurrency semaphore. Each provider's CLI h
 
 - **Anthropic**: Officially prohibits third-party developers from offering claude.ai login for their products. However, the pattern of "user brings their own authenticated CLI" is established by Cline, Zed, and Repo Prompt. **Safe for personal/team use. Don't ship as a SaaS.**
 - **OpenAI**: Codex CLI explicitly supports ChatGPT subscription auth and programmatic `exec` mode. **Officially supported pattern.**
-- **Google**: Gemini CLI supports Google OAuth and API key auth. Free tier available (60 req/min, 1000 req/day). **Low risk.**
+- **Google**: Gemini CLI supports Google OAuth and API key auth. **Low risk.**
 
 ## What SubLLM Is NOT
 
