@@ -26,19 +26,18 @@ from subllm.types import (
 )
 
 _MODEL_MAP: dict[str, str] = {
-    "gpt-5.3": "gpt-5.3-codex",
-    "gpt-5.3-spark": "gpt-5.3-codex-spark",
-    "o3": "o3",
-    "o4-mini": "o4-mini",
+    "gpt-5.2": "gpt-5.2",
+    "gpt-5.2-codex": "gpt-5.2-codex",
+    "gpt-4.1": "gpt-4.1",
+    "gpt-5-mini": "gpt-5-mini",
 }
 
 
 class CodexProvider(Provider):
     """Routes completions through the OpenAI Codex CLI."""
 
-    def __init__(self, cli_path: str | None = None, approval_mode: str = "full-auto"):
+    def __init__(self, cli_path: str | None = None):
         self._cli_path = cli_path or shutil.which("codex") or "codex"
-        self._approval_mode = approval_mode
 
     @property
     def name(self) -> str:
@@ -74,7 +73,7 @@ class CodexProvider(Provider):
             )
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._cli_path, "login", "--status",
+                self._cli_path, "login", "status",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
@@ -97,10 +96,7 @@ class CodexProvider(Provider):
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
         resolved = self.resolve_model(model)
-        args = [
-            self._cli_path, "exec", prompt,
-            "--model", resolved, "--approval-mode", self._approval_mode,
-        ]
+        args = [self._cli_path, "exec", prompt, "--model", resolved, "--full-auto", "--json"]
 
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -112,15 +108,38 @@ class CodexProvider(Provider):
                 f"Codex CLI failed (exit {proc.returncode}): {stderr.decode().strip()}"
             )
 
-        content = stdout.decode().strip()
-        return ChatCompletionResponse(
-            model=f"codex/{model}",
-            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
-            usage=Usage(
+        content_parts: list[str] = []
+        usage = None
+        for line in stdout.decode().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                if event.get("type") == "item.completed":
+                    item = event.get("item", {})
+                    if item.get("type") == "agent_message":
+                        content_parts.append(item.get("text", ""))
+                elif event.get("type") == "turn.completed":
+                    stats = event.get("usage", {})
+                    inp = stats.get("input_tokens", 0)
+                    out = stats.get("output_tokens", 0)
+                    usage = Usage(prompt_tokens=inp, completion_tokens=out, total_tokens=inp + out)
+            except json.JSONDecodeError:
+                continue
+
+        content = "\n".join(content_parts)
+        if not usage:
+            usage = Usage(
                 prompt_tokens=estimate_tokens(prompt),
                 completion_tokens=estimate_tokens(content),
                 total_tokens=estimate_tokens(prompt) + estimate_tokens(content),
-            ),
+            )
+
+        return ChatCompletionResponse(
+            model=f"codex/{model}",
+            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
+            usage=usage,
         )
 
     async def stream(
@@ -130,11 +149,7 @@ class CodexProvider(Provider):
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
         resolved = self.resolve_model(model)
-        args = [
-            self._cli_path, "exec", prompt,
-            "--model", resolved, "--approval-mode", self._approval_mode,
-            "--output-format", "jsonl",
-        ]
+        args = [self._cli_path, "exec", prompt, "--model", resolved, "--full-auto", "--json"]
 
         proc = await asyncio.create_subprocess_exec(
             *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -150,31 +165,22 @@ class CodexProvider(Provider):
                 continue
             try:
                 event = json.loads(line)
-                text = None
-                if event.get("type") == "message" and event.get("role") == "assistant":
-                    text = event.get("content", "")
-                elif event.get("type") == "text":
-                    text = event.get("text", "")
-                elif isinstance(event.get("content"), str):
-                    text = event["content"]
-
-                if text:
-                    yield ChatCompletionChunk(
-                        id=chunk_id, model=f"codex/{model}",
-                        choices=[StreamChoice(delta=Delta(
-                            role="assistant" if first else None, content=text,
-                        ))],
-                    )
-                    first = False
+                if event.get("type") == "item.completed":
+                    item = event.get("item", {})
+                    if item.get("type") == "agent_message":
+                        text = item.get("text", "")
+                        if text:
+                            yield ChatCompletionChunk(
+                                id=chunk_id, model=f"codex/{model}",
+                                choices=[StreamChoice(delta=Delta(
+                                    role="assistant" if first else None, content=text,
+                                ))],
+                            )
+                            first = False
+                elif event.get("type") == "error":
+                    raise RuntimeError(f"Codex error: {event.get('message', 'unknown')}")
             except json.JSONDecodeError:
-                if line:
-                    yield ChatCompletionChunk(
-                        id=chunk_id, model=f"codex/{model}",
-                        choices=[StreamChoice(delta=Delta(
-                            role="assistant" if first else None, content=line + "\n",
-                        ))],
-                    )
-                    first = False
+                continue
 
         yield ChatCompletionChunk(
             id=chunk_id, model=f"codex/{model}",

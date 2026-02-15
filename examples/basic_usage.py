@@ -50,12 +50,12 @@ async def main() -> None:
     conversation = [
         {"role": "user", "content": "Remember the number 42."},
     ]
-    r1 = await subllm.completion(model="codex/gpt-5.3", messages=conversation)
+    r1 = await subllm.completion(model="codex/gpt-5.2-codex", messages=conversation)
     print(f"Turn 1: {r1.choices[0].message.content}")
 
     conversation.append({"role": "assistant", "content": r1.choices[0].message.content})
     conversation.append({"role": "user", "content": "What number did I ask you to remember?"})
-    r2 = await subllm.completion(model="codex/gpt-5.3", messages=conversation)
+    r2 = await subllm.completion(model="codex/gpt-5.2-codex", messages=conversation)
     print(f"Turn 2: {r2.choices[0].message.content}")
     print()
 
@@ -72,7 +72,7 @@ async def main() -> None:
                 "messages": [{"role": "user", "content": "Capital of Japan? One word."}],
             },
             {
-                "model": "codex/gpt-5.3",
+                "model": "codex/gpt-5.2-codex",
                 "messages": [{"role": "user", "content": "Capital of Brazil? One word."}],
             },
         ],
