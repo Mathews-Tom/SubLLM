@@ -4,22 +4,31 @@ build-backend = "hatchling.build"
 
 [project]
 name = "subllm"
-version = "0.2.0"
+version = "0.3.0"
 description = "Route LLM API calls through subscription-authenticated coding agents (Claude Code, Codex, Gemini CLI)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "Tom" }]
+authors = [{ name = "Tom Mathews" }]
 keywords = ["llm", "claude", "codex", "gemini", "proxy", "subscription"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
 
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Mathews-Tom/SubLLM"
+Repository = "https://github.com/Mathews-Tom/SubLLM"
+Issues = "https://github.com/Mathews-Tom/SubLLM/issues"
 
 [project.optional-dependencies]
 server = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
