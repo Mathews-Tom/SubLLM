@@ -103,6 +103,13 @@ class Provider(abc.ABC):
     ) -> AsyncIterator[ChatCompletionChunk]:
         ...
 
+    async def close(self) -> None:
+        """Release provider resources (persistent connections, subprocesses, etc.).
+
+        Override in subclasses that hold long-lived connections.
+        Default implementation is a no-op.
+        """
+
     def resolve_model(self, model_alias: str) -> str:
         """Map a SubLLM model alias (e.g., 'sonnet') to the provider's model string."""
         return model_alias

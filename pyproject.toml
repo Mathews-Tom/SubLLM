@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "subllm"
-version = "0.3.0"
+version = "0.4.0"
 description = "Route LLM API calls through subscription-authenticated coding agents (Claude Code, Codex, Gemini CLI)"
 readme = "README.md"
 license = "MIT"
@@ -23,7 +23,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 
-dependencies = []
+dependencies = [
+    "claude-agent-sdk>=0.1.36",
+]
 
 [project.urls]
 Homepage = "https://github.com/Mathews-Tom/SubLLM"
@@ -32,7 +34,6 @@ Issues = "https://github.com/Mathews-Tom/SubLLM/issues"
 
 [project.optional-dependencies]
 server = ["fastapi>=0.100.0", "uvicorn>=0.20.0"]
-sdk = ["claude-agent-sdk>=0.1.0"]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.scripts]

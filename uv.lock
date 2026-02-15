@@ -877,17 +877,17 @@ wheels = [
 
 [[package]]
 name = "subllm"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
+dependencies = [
+    { name = "claude-agent-sdk" },
+]
 
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
-]
-sdk = [
-    { name = "claude-agent-sdk" },
 ]
 server = [
     { name = "fastapi" },
@@ -901,14 +901,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", marker = "extra == 'sdk'", specifier = ">=0.1.0" },
+    { name = "claude-agent-sdk", specifier = ">=0.1.36" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.100.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.20.0" },
 ]
-provides-extras = ["server", "sdk", "dev"]
+provides-extras = ["server", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "rich", specifier = ">=14.3.2" }]
