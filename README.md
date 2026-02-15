@@ -22,7 +22,7 @@ SubLLM eliminates the double-pay problem. It routes standard `completion()` call
 | Approach                  | Cost (heavy usage) | Overhead   | Flexibility        |
 | ------------------------- | ------------------ | ---------- | ------------------ |
 | Direct API (per-token)    | $50-500+/mo        | ~0s        | Full control       |
-| **SubLLM (subscription)** | **$0-200/mo flat** | **~270ms** | Good for batch/dev |
+| **SubLLM (subscription)** | **$0-200/mo flat** | **~280ms** | Good for batch/dev |
 | Direct API + LiteLLM      | $50-500+/mo        | ~0s        | Multi-provider     |
 
 **Best for:** development, prototyping, batch jobs, CI/CD, personal automation, cost-sensitive pipelines.
@@ -164,16 +164,16 @@ Runs completions in parallel with a concurrency semaphore. Each provider's CLI h
 
 ## Benchmarks
 
-Measured on macOS. Timings include full CLI subprocess overhead (spawn, auth, inference, response parsing). Single run — expect variance across sessions.
+Measured on macOS. Claude Code uses the Agent SDK (persistent client, no subprocess). Codex and Gemini use CLI subprocess (spawn, auth, inference, response parsing). Single run — expect variance across sessions.
 
 ### Auth Check
 
 | Provider    | Method               | Latency |
 | ----------- | -------------------- | ------- |
-| claude-code | `claude auth status` | ~266ms  |
-| codex       | subscription check   | ~97ms   |
+| claude-code | `claude auth status` | ~302ms  |
+| codex       | subscription check   | ~94ms   |
 | gemini      | OAuth credential file | ~2ms   |
-| **all (parallel)** | **`asyncio.gather`** | **~270ms** |
+| **all (parallel)** | **`asyncio.gather`** | **~279ms** |
 
 Auth is bounded by the slowest provider. Previous sequential approach with inference roundtrips: ~30s total.
 
@@ -181,19 +181,19 @@ Auth is bounded by the slowest provider. Previous sequential approach with infer
 
 | Provider    | Model                         | Non-streaming | Streaming |
 | ----------- | ----------------------------- | ------------- | --------- |
-| claude-code | `sonnet-4-5`                  | ~13-17s       | ~9-15s    |
-| codex       | `gpt-5.2`                     | ~11-15s       | ~11-12s   |
-| gemini      | `gemini-3-flash-preview`      | ~8-9s         | ~8-9s     |
+| claude-code | `sonnet-4-5`                  | ~6s           | ~7s       |
+| codex       | `gpt-5.2`                     | ~7s           | ~9s       |
+| gemini      | `gemini-3-flash-preview`      | ~14s          | ~11s      |
 
 ### Multi-turn
 
 | Provider    | Model                         | Turn 1 | Turn 2 |
 | ----------- | ----------------------------- | ------ | ------ |
-| claude-code | `sonnet-4-5`                  | ~16s   | ~14s   |
-| codex       | `gpt-5.2`                     | ~15s   | ~12s   |
-| gemini      | `gemini-3-flash-preview`      | ~13s   | ~14s   |
+| claude-code | `sonnet-4-5`                  | ~8s    | ~3s    |
+| codex       | `gpt-5.2`                     | ~9s    | ~10s   |
+| gemini      | `gemini-3-flash-preview`      | ~55s   | ~12s   |
 
-Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 context.
+Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 context. Gemini Turn 1 includes initial codebase investigation overhead.
 
 ### Cross-provider Handoff
 
@@ -201,18 +201,18 @@ Message history replayed across different providers within a single conversation
 
 | Turn           | Provider                        | Latency |
 | -------------- | ------------------------------- | ------- |
-| 1 (remember)   | `claude-code/sonnet-4-5`        | ~16s    |
+| 1 (remember)   | `claude-code/sonnet-4-5`        | ~7s     |
 | 2 (recall)     | `codex/gpt-5.2`                | ~11s    |
-| 3 (verify)     | `gemini/gemini-3-flash-preview` | ~14s    |
+| 3 (verify)     | `gemini/gemini-3-flash-preview` | ~15s    |
 
 ### Batch (3 parallel completions)
 
 | Scope          | Latency |
 | -------------- | ------- |
-| claude-code    | ~17s    |
-| codex          | ~14s    |
-| gemini         | ~9s     |
-| cross-provider | ~14s    |
+| claude-code    | ~8s     |
+| codex          | ~10s    |
+| gemini         | ~10s    |
+| cross-provider | ~8s     |
 
 Parallel execution bounded by the slowest request.
 
