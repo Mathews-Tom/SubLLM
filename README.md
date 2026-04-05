@@ -127,9 +127,10 @@ response = client.chat.completions.create(
 
 SubLLM implements a strict subset of the OpenAI chat completions contract.
 
-- Accepted request fields: `max_tokens`, `messages`, `model`, `stream`, `system_prompt`, `temperature`
+- Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `stream`, `system_prompt`, `temperature`
 - Supported message roles: `system`, `user`, `assistant`
 - Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`
+- Registered prompt references are accepted through the `prompt` field and resolve to versioned system prompt text before provider dispatch.
 - Unsupported chat-completions fields are rejected explicitly. Common examples: `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, `logprobs`, `top_logprobs`, `n`, `metadata`, `modalities`, `audio`, `store`, `user`, `reasoning`
 
 ## Available Models
@@ -145,6 +146,14 @@ SubLLM implements a strict subset of the OpenAI chat completions contract.
 | `codex/gpt-5-mini` | GPT-5 Mini via `codex exec` | ChatGPT Plus ($20) / Pro ($200) or OPENAI_API_KEY |
 | `gemini/gemini-3-pro-preview` | Gemini 3 Pro Preview via `gemini -p` | GEMINI_API_KEY, GOOGLE_API_KEY, Google AI Pro, or Google AI Ultra |
 | `gemini/gemini-3-flash-preview` | Gemini 3 Flash Preview via `gemini -p` | GEMINI_API_KEY, GOOGLE_API_KEY, Google AI Pro, or Google AI Ultra |
+
+## Prompt Registry
+
+| Prompt | Version | Variables | Description |
+| --- | --- | --- | --- |
+| `chat-default` | `v1` | none | General-purpose assistant baseline for deterministic replies. |
+| `code-review` | `v1` | none | Review-focused system prompt for findings-first output. |
+| `release-notes` | `v1` | `audience` | Release-summary prompt with an audience variable. |
 
 ## Provider Capabilities
 

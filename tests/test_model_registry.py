@@ -29,8 +29,10 @@ def test_readme_generated_section_matches_registry() -> None:
 
     assert "## Supported Chat Completions Subset" in managed
     assert "## Available Models" in managed
+    assert "## Prompt Registry" in managed
     assert "## Provider Capabilities" in managed
     assert "`codex/gpt-5.2`" in managed
+    assert "`chat-default`" in managed
 
 
 def test_validate_readme_accepts_checked_in_registry_docs() -> None:
