@@ -95,6 +95,8 @@ from subllm.types import (
     PromptReference,
     RequestMessage,
     ResolvedImageInput,
+    ResponseSession,
+    SessionRequest,
     TextContentPart,
 )
 
@@ -108,6 +110,7 @@ __all__ = [
     "PromptRegistry",
     "RegisteredPrompt",
     "ResolvedPrompt",
+    "ResponseSession",
     "ContractCase",
     "ContractResult",
     "ContractSuiteResult",
@@ -153,6 +156,7 @@ __all__ = [
     "ResolvedImageInput",
     "RequestTimeoutError",
     "RequestTooLargeError",
+    "SessionRequest",
     "SubLLMError",
     "TextContentPart",
     "UnknownModelError",

@@ -41,6 +41,7 @@ from subllm.types import (
     Delta,
     Message,
     ProviderMessage,
+    SessionRequest,
     StreamChoice,
     Usage,
 )
@@ -213,6 +214,7 @@ class GeminiCLIProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
         args = self._build_cli_args(prompt, model, output_format="json")
@@ -290,6 +292,7 @@ class GeminiCLIProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
         args = self._build_cli_args(prompt, model, output_format="stream-json")

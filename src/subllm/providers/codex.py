@@ -36,6 +36,8 @@ from subllm.types import (
     Message,
     ProviderMessage,
     ResolvedImageInput,
+    ResponseSession,
+    SessionRequest,
     StreamChoice,
     Usage,
 )
@@ -79,9 +81,14 @@ class CodexProvider(Provider):
         model: str,
         *,
         image_paths: list[str] | None = None,
+        session: SessionRequest | None = None,
     ) -> list[str]:
         resolved = self.resolve_model(model)
-        args = [self._cli_path, "exec", prompt, "--model", resolved, "--json"]
+        if session is not None and session.mode == "resume":
+            args = [self._cli_path, "exec", "resume", session.id or "", prompt]
+        else:
+            args = [self._cli_path, "exec", prompt]
+        args.extend(["--model", resolved, "--json"])
         for image_path in image_paths or []:
             args.extend(["--image", image_path])
         return args
@@ -181,10 +188,11 @@ class CodexProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
         async with self._prepared_image_paths(messages) as image_paths:
-            args = self._build_cli_args(prompt, model, image_paths=image_paths)
+            args = self._build_cli_args(prompt, model, image_paths=image_paths, session=session)
 
             proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -212,17 +220,21 @@ class CodexProvider(Provider):
 
         content_parts: list[str] = []
         usage = None
+        session_info = _session_response_for(session)
         for line in stdout.decode().splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
                 event = json.loads(line)
-                if event.get("type") == "item.completed":
+                event_type = event.get("type")
+                if event_type == "thread.started":
+                    session_info = _resolve_codex_session(session, event.get("thread_id"))
+                elif event_type == "item.completed":
                     item = event.get("item", {})
                     if item.get("type") == "agent_message":
                         content_parts.append(item.get("text", ""))
-                elif event.get("type") == "turn.completed":
+                elif event_type == "turn.completed":
                     stats = event.get("usage", {})
                     inp = stats.get("input_tokens", 0)
                     out = stats.get("output_tokens", 0)
@@ -231,6 +243,7 @@ class CodexProvider(Provider):
                 continue
 
         content = "\n".join(content_parts)
+        session_info = _require_create_session(session, session_info)
         if not usage:
             usage = Usage(
                 prompt_tokens=estimate_tokens(prompt),
@@ -244,6 +257,7 @@ class CodexProvider(Provider):
                 Choice(message=Message(role="assistant", content=content), finish_reason="stop")
             ],
             usage=usage,
+            session=session_info,
         )
 
     async def stream(
@@ -254,10 +268,11 @@ class CodexProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
         async with self._prepared_image_paths(messages) as image_paths:
-            args = self._build_cli_args(prompt, model, image_paths=image_paths)
+            args = self._build_cli_args(prompt, model, image_paths=image_paths, session=session)
 
             proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -268,6 +283,7 @@ class CodexProvider(Provider):
             chunk_id = f"chatcmpl-codex-{id(proc)}"
             first = True
             stream_error: str | None = None
+            session_info = _session_response_for(session)
 
             assert proc.stdout is not None
             while True:
@@ -291,7 +307,10 @@ class CodexProvider(Provider):
                     continue
                 try:
                     event = json.loads(line)
-                    if event.get("type") == "item.completed":
+                    event_type = event.get("type")
+                    if event_type == "thread.started":
+                        session_info = _resolve_codex_session(session, event.get("thread_id"))
+                    elif event_type == "item.completed":
                         item = event.get("item", {})
                         if item.get("type") == "agent_message":
                             text = item.get("text", "")
@@ -299,6 +318,7 @@ class CodexProvider(Provider):
                                 yield ChatCompletionChunk(
                                     id=chunk_id,
                                     model=f"codex/{model}",
+                                    session=session_info,
                                     choices=[
                                         StreamChoice(
                                             delta=Delta(
@@ -309,7 +329,7 @@ class CodexProvider(Provider):
                                     ],
                                 )
                                 first = False
-                    elif event.get("type") == "error":
+                    elif event_type == "error":
                         stream_error = f"Codex error: {event.get('message', 'unknown')}"
                         break
                 except json.JSONDecodeError:
@@ -335,9 +355,11 @@ class CodexProvider(Provider):
                     message=f"Codex CLI failed (exit {proc.returncode}): {stderr_text}",
                 )
 
+            session_info = _require_create_session(session, session_info)
             yield ChatCompletionChunk(
                 id=chunk_id,
                 model=f"codex/{model}",
+                session=session_info,
                 choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
             )
 
@@ -349,3 +371,39 @@ def _suffix_for_media_type(media_type: str) -> str:
         "image/png": ".png",
         "image/webp": ".webp",
     }.get(media_type, ".bin")
+
+
+def _session_response_for(session: SessionRequest | None) -> ResponseSession | None:
+    if session is None or session.mode != "resume" or session.id is None:
+        return None
+    return ResponseSession(id=session.id, mode="resume")
+
+
+def _resolve_codex_session(
+    session: SessionRequest | None,
+    thread_id: str | None,
+) -> ResponseSession | None:
+    if session is None:
+        return None
+    if thread_id:
+        return ResponseSession(id=thread_id, mode=session.mode)
+    if session.mode == "resume" and session.id is not None:
+        return ResponseSession(id=session.id, mode="resume")
+    raise ProviderFailureError(
+        provider="codex",
+        message="Codex did not report a resumable session identifier",
+    )
+
+
+def _require_create_session(
+    session: SessionRequest | None,
+    session_info: ResponseSession | None,
+) -> ResponseSession | None:
+    if session is None or session.mode != "create":
+        return session_info
+    if session_info is None:
+        raise ProviderFailureError(
+            provider="codex",
+            message="Codex did not report a resumable session identifier",
+        )
+    return session_info

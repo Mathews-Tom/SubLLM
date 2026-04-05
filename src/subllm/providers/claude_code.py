@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -57,6 +58,8 @@ from subllm.types import (
     Delta,
     Message,
     ProviderMessage,
+    ResponseSession,
+    SessionRequest,
     StreamChoice,
     Usage,
 )
@@ -322,12 +325,21 @@ class ClaudeCodeProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse:
-        return await self._complete(messages, model, system_prompt=system_prompt)
+        return await self._complete(messages, model, system_prompt=system_prompt, session=session)
 
-    async def _query_with_timeout(self, client: ClaudeSDKClient, prompt: str) -> None:
+    async def _query_with_timeout(
+        self,
+        client: ClaudeSDKClient,
+        prompt: str,
+        *,
+        session_id: str,
+    ) -> None:
         try:
-            await asyncio.wait_for(client.query(prompt), timeout=self._request_timeout)
+            await asyncio.wait_for(
+                client.query(prompt, session_id=session_id), timeout=self._request_timeout
+            )
         except asyncio.TimeoutError as exc:
             raise ProviderTimeoutError(
                 provider=self.name,
@@ -356,18 +368,21 @@ class ClaudeCodeProvider(Provider):
         model: str,
         *,
         system_prompt: str | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
+        session_id = _query_session_id(session)
 
         try:
             client_key = self._client_key(model, system_prompt=system_prompt)
             client_lock = await self._client_lock(client_key)
             async with client_lock:
                 client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-                await self._query_with_timeout(client, prompt)
+                await self._query_with_timeout(client, prompt, session_id=session_id)
 
                 content_parts: list[str] = []
                 usage_data: dict[str, Any] = {}
+                response_session_id: str | None = None
                 response_stream = client.receive_response()
 
                 while (message := await self._next_response(response_stream)) is not None:
@@ -376,6 +391,7 @@ class ClaudeCodeProvider(Provider):
                             if isinstance(block, TextBlock):
                                 content_parts.append(block.text)
                     elif isinstance(message, ResultMessage):
+                        response_session_id = getattr(message, "session_id", response_session_id)
                         if message.usage:
                             usage_data = message.usage
                         if message.is_error:
@@ -403,6 +419,7 @@ class ClaudeCodeProvider(Provider):
                         completion_tokens=completion_tokens,
                         total_tokens=prompt_tokens + completion_tokens,
                     ),
+                    session=_response_session(session, response_session_id or session_id),
                 )
 
         except (ProviderFailureError, ProviderTimeoutError):
@@ -418,8 +435,14 @@ class ClaudeCodeProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
-        async for chunk in self._stream_impl(messages, model, system_prompt=system_prompt):
+        async for chunk in self._stream_impl(
+            messages,
+            model,
+            system_prompt=system_prompt,
+            session=session,
+        ):
             yield chunk
 
     async def _stream_impl(
@@ -428,8 +451,11 @@ class ClaudeCodeProvider(Provider):
         model: str,
         *,
         system_prompt: str | None = None,
+        session: SessionRequest | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
+        session_id = _query_session_id(session)
+        session_info = _response_session(session, session_id)
 
         try:
             client_key = self._client_key(model, system_prompt=system_prompt)
@@ -444,7 +470,7 @@ class ClaudeCodeProvider(Provider):
         async with client_lock:
             try:
                 client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-                await self._query_with_timeout(client, prompt)
+                await self._query_with_timeout(client, prompt, session_id=session_id)
             except Exception as exc:
                 if isinstance(exc, (ProviderFailureError, ProviderTimeoutError)):
                     raise
@@ -463,6 +489,7 @@ class ClaudeCodeProvider(Provider):
                             yield ChatCompletionChunk(
                                 id=chunk_id,
                                 model=f"claude-code/{model}",
+                                session=session_info,
                                 choices=[
                                     StreamChoice(
                                         delta=Delta(
@@ -474,6 +501,8 @@ class ClaudeCodeProvider(Provider):
                             )
                             first = False
                 elif isinstance(message, ResultMessage):
+                    result_session_id = getattr(message, "session_id", session_id)
+                    session_info = _response_session(session, result_session_id)
                     if message.is_error:
                         raise ProviderFailureError(
                             provider=self.name,
@@ -483,6 +512,7 @@ class ClaudeCodeProvider(Provider):
             yield ChatCompletionChunk(
                 id=chunk_id,
                 model=f"claude-code/{model}",
+                session=session_info,
                 choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
             )
 
@@ -496,3 +526,18 @@ class ClaudeCodeProvider(Provider):
                 await client.disconnect()
             except Exception:
                 logger.debug("SDK client disconnect error (ignored)", exc_info=True)
+
+
+def _query_session_id(session: SessionRequest | None) -> str:
+    if session is not None and session.mode == "resume" and session.id is not None:
+        return session.id
+    return str(uuid.uuid4())
+
+
+def _response_session(
+    session: SessionRequest | None,
+    session_id: str,
+) -> ResponseSession | None:
+    if session is None:
+        return None
+    return ResponseSession(id=session_id, mode=session.mode)

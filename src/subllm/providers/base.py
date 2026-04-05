@@ -11,6 +11,7 @@ from subllm.types import (
     ChatCompletionChunk,
     ChatCompletionResponse,
     ProviderMessage,
+    SessionRequest,
 )
 
 
@@ -92,6 +93,7 @@ class Provider(abc.ABC):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse: ...
 
     @abc.abstractmethod
@@ -103,6 +105,7 @@ class Provider(abc.ABC):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]: ...
 
     async def close(self) -> None:
