@@ -7,19 +7,23 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from subllm.router import Router
 from subllm.server_api.errors import install_exception_handlers
+from subllm.server_api.middleware import install_server_controls
 from subllm.server_api.requests import parse_chat_completion_request
 from subllm.server_api.responses import (
     build_health_response,
     build_model_list,
     sse_chat_completion_stream,
 )
+from subllm.server_api.settings import ServerSettings
 
 
-def create_app() -> FastAPI:
+def create_app(settings: ServerSettings | None = None) -> FastAPI:
     """Create FastAPI app with OpenAI-compatible endpoints."""
     app = FastAPI(title="SubLLM Proxy", version="0.2.0")
     router = Router()
+    active_settings = settings or ServerSettings.from_inputs()
     install_exception_handlers(app)
+    install_server_controls(app, active_settings)
 
     @app.get("/v1/models")
     async def list_models() -> JSONResponse:

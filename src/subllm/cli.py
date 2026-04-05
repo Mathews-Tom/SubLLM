@@ -5,6 +5,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from ipaddress import ip_address
+
+
+def _is_local_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _run_auth_check() -> None:
@@ -45,15 +55,34 @@ def _run_completion(model: str, prompt: str, stream: bool) -> None:
     asyncio.run(_do())
 
 
-def _run_server(host: str, port: int) -> None:
+def _run_server(
+    host: str,
+    port: int,
+    *,
+    auth_token: str | None,
+    max_request_bytes: int | None,
+    request_timeout_seconds: float | None,
+    rate_limit_per_minute: int | None,
+) -> None:
     try:
         from subllm.server import create_app
+        from subllm.server_api.settings import ServerSettings
         import uvicorn
     except ImportError:
         print("Server dependencies not installed. Run: uv add subllm[server]")
         sys.exit(1)
 
-    app = create_app()
+    settings = ServerSettings.from_inputs(
+        auth_token=auth_token,
+        max_request_bytes=max_request_bytes,
+        request_timeout_seconds=request_timeout_seconds,
+        rate_limit_per_minute=rate_limit_per_minute,
+    )
+    if not _is_local_host(host) and settings.auth_token is None:
+        print("Refusing to bind a non-local host without a bearer auth token.")
+        sys.exit(1)
+
+    app = create_app(settings=settings)
     print(f"SubLLM proxy server starting on http://{host}:{port}")
     print(f"Use as OpenAI base_url: http://{host}:{port}/v1")
     uvicorn.run(app, host=host, port=port)
@@ -77,6 +106,10 @@ def main() -> None:
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible proxy server")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8080)
+    p_serve.add_argument("--auth-token")
+    p_serve.add_argument("--max-request-bytes", type=int)
+    p_serve.add_argument("--request-timeout-seconds", type=float)
+    p_serve.add_argument("--rate-limit-per-minute", type=int)
 
     args = parser.parse_args()
 
@@ -87,7 +120,14 @@ def main() -> None:
     elif args.command == "complete":
         _run_completion(args.model, args.prompt, args.stream)
     elif args.command == "serve":
-        _run_server(args.host, args.port)
+        _run_server(
+            args.host,
+            args.port,
+            auth_token=args.auth_token,
+            max_request_bytes=args.max_request_bytes,
+            request_timeout_seconds=args.request_timeout_seconds,
+            rate_limit_per_minute=args.rate_limit_per_minute,
+        )
     else:
         parser.print_help()
 
