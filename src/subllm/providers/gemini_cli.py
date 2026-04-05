@@ -21,7 +21,12 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from subllm.providers.base import Provider, ProviderCapabilities, estimate_tokens, messages_to_prompt
+from subllm.providers.base import (
+    Provider,
+    ProviderCapabilities,
+    estimate_tokens,
+    messages_to_prompt,
+)
 from subllm.types import (
     AuthStatus,
     ChatCompletionChunk,
@@ -46,11 +51,9 @@ class GeminiCLIProvider(Provider):
         self,
         cli_path: str | None = None,
         env_overrides: dict[str, str] | None = None,
-        yolo_mode: bool = False,
     ):
         self._cli_path = cli_path or shutil.which("gemini") or "gemini"
         self._env_overrides = env_overrides or {}
-        self._yolo_mode = yolo_mode  # --yolo skips all tool confirmations
 
     @property
     def name(self) -> str:
@@ -93,7 +96,8 @@ class GeminiCLIProvider(Provider):
 
         if not shutil.which(self._cli_path):
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error=f"Gemini CLI not found at '{self._cli_path}'. "
                 "Install: npm install -g @google/gemini-cli or see https://geminicli.com",
             )
@@ -131,7 +135,8 @@ class GeminiCLIProvider(Provider):
             if expiry_sec > time.time():
                 return AuthStatus(provider=self.name, authenticated=True, method="google_oauth")
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error="Google OAuth token expired. Run `gemini` to re-authenticate.",
             )
 
@@ -142,8 +147,13 @@ class GeminiCLIProvider(Provider):
         """Fallback: run a minimal inference call to verify auth."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._cli_path, "-p", "say ok", "--output-format", "json",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                self._cli_path,
+                "-p",
+                "say ok",
+                "--output-format",
+                "json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 env=self._build_env(),
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
@@ -151,38 +161,50 @@ class GeminiCLIProvider(Provider):
                 return AuthStatus(provider=self.name, authenticated=True, method="google_oauth")
             err_msg = stderr.decode().strip()
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error=f"Not authenticated: {err_msg}. "
                 "Run `gemini` and complete Google login, or set GEMINI_API_KEY.",
             )
         except asyncio.TimeoutError:
             return AuthStatus(
-                provider=self.name, authenticated=False, error="Auth check timed out.",
+                provider=self.name,
+                authenticated=False,
+                error="Auth check timed out.",
             )
         except FileNotFoundError:
             return AuthStatus(
-                provider=self.name, authenticated=False, error="Gemini CLI not found.",
+                provider=self.name,
+                authenticated=False,
+                error="Gemini CLI not found.",
             )
 
     def _build_cli_args(
-        self, prompt: str, model: str, *, output_format: str = "json",
+        self,
+        prompt: str,
+        model: str,
+        *,
+        output_format: str = "json",
     ) -> list[str]:
         resolved = self.resolve_model(model)
-        args = [self._cli_path, "-p", prompt, "--model", resolved, "--output-format", output_format]
-        if self._yolo_mode:
-            args.append("--yolo")
-        return args
+        return [self._cli_path, "-p", prompt, "--model", resolved, "--output-format", output_format]
 
     async def complete(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
         args = self._build_cli_args(prompt, model, output_format="json")
 
         proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             env=self._build_env(),
         )
         stdout, stderr = await proc.communicate()
@@ -226,20 +248,28 @@ class GeminiCLIProvider(Provider):
 
         return ChatCompletionResponse(
             model=f"gemini/{model}",
-            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
+            choices=[
+                Choice(message=Message(role="assistant", content=content), finish_reason="stop")
+            ],
             usage=usage,
         )
 
     async def stream(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
         args = self._build_cli_args(prompt, model, output_format="stream-json")
 
         proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             env=self._build_env(),
         )
 
@@ -272,24 +302,37 @@ class GeminiCLIProvider(Provider):
 
                 if text:
                     yield ChatCompletionChunk(
-                        id=chunk_id, model=f"gemini/{model}",
-                        choices=[StreamChoice(delta=Delta(
-                            role="assistant" if first else None, content=text,
-                        ))],
+                        id=chunk_id,
+                        model=f"gemini/{model}",
+                        choices=[
+                            StreamChoice(
+                                delta=Delta(
+                                    role="assistant" if first else None,
+                                    content=text,
+                                )
+                            )
+                        ],
                     )
                     first = False
             except json.JSONDecodeError:
                 if line:
                     yield ChatCompletionChunk(
-                        id=chunk_id, model=f"gemini/{model}",
-                        choices=[StreamChoice(delta=Delta(
-                            role="assistant" if first else None, content=line + "\n",
-                        ))],
+                        id=chunk_id,
+                        model=f"gemini/{model}",
+                        choices=[
+                            StreamChoice(
+                                delta=Delta(
+                                    role="assistant" if first else None,
+                                    content=line + "\n",
+                                )
+                            )
+                        ],
                     )
                     first = False
 
         yield ChatCompletionChunk(
-            id=chunk_id, model=f"gemini/{model}",
+            id=chunk_id,
+            model=f"gemini/{model}",
             choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
         )
         await proc.wait()

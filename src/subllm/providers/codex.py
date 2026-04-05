@@ -13,7 +13,12 @@ import os
 import shutil
 from collections.abc import AsyncIterator
 
-from subllm.providers.base import Provider, ProviderCapabilities, estimate_tokens, messages_to_prompt
+from subllm.providers.base import (
+    Provider,
+    ProviderCapabilities,
+    estimate_tokens,
+    messages_to_prompt,
+)
 from subllm.types import (
     AuthStatus,
     ChatCompletionChunk,
@@ -62,44 +67,59 @@ class CodexProvider(Provider):
     def resolve_model(self, model_alias: str) -> str:
         return _MODEL_MAP.get(model_alias, model_alias)
 
+    def _build_cli_args(self, prompt: str, model: str) -> list[str]:
+        resolved = self.resolve_model(model)
+        return [self._cli_path, "exec", prompt, "--model", resolved, "--json"]
+
     async def check_auth(self) -> AuthStatus:
         if os.environ.get("OPENAI_API_KEY"):
             return AuthStatus(provider=self.name, authenticated=True, method="api_key")
         if not shutil.which(self._cli_path):
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error=f"Codex CLI not found at '{self._cli_path}'. "
                 "Install: npm install -g @openai/codex",
             )
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._cli_path, "login", "status",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                self._cli_path,
+                "login",
+                "status",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
             if proc.returncode == 0:
                 return AuthStatus(provider=self.name, authenticated=True, method="subscription")
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error="Not authenticated. Run `codex login` to sign in.",
             )
         except (asyncio.TimeoutError, FileNotFoundError):
             return AuthStatus(
-                provider=self.name, authenticated=False,
+                provider=self.name,
+                authenticated=False,
                 error="Could not verify Codex authentication.",
             )
 
     async def complete(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
-        resolved = self.resolve_model(model)
-        args = [self._cli_path, "exec", prompt, "--model", resolved, "--full-auto", "--json"]
+        args = self._build_cli_args(prompt, model)
 
         proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
 
@@ -138,21 +158,28 @@ class CodexProvider(Provider):
 
         return ChatCompletionResponse(
             model=f"codex/{model}",
-            choices=[Choice(message=Message(role="assistant", content=content), finish_reason="stop")],
+            choices=[
+                Choice(message=Message(role="assistant", content=content), finish_reason="stop")
+            ],
             usage=usage,
         )
 
     async def stream(
-        self, messages: list[dict], model: str, *,
-        system_prompt: str | None = None, max_tokens: int | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
-        resolved = self.resolve_model(model)
-        args = [self._cli_path, "exec", prompt, "--model", resolved, "--full-auto", "--json"]
+        args = self._build_cli_args(prompt, model)
 
         proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
 
         chunk_id = f"chatcmpl-codex-{id(proc)}"
@@ -171,10 +198,16 @@ class CodexProvider(Provider):
                         text = item.get("text", "")
                         if text:
                             yield ChatCompletionChunk(
-                                id=chunk_id, model=f"codex/{model}",
-                                choices=[StreamChoice(delta=Delta(
-                                    role="assistant" if first else None, content=text,
-                                ))],
+                                id=chunk_id,
+                                model=f"codex/{model}",
+                                choices=[
+                                    StreamChoice(
+                                        delta=Delta(
+                                            role="assistant" if first else None,
+                                            content=text,
+                                        )
+                                    )
+                                ],
                             )
                             first = False
                 elif event.get("type") == "error":
@@ -183,7 +216,8 @@ class CodexProvider(Provider):
                 continue
 
         yield ChatCompletionChunk(
-            id=chunk_id, model=f"codex/{model}",
+            id=chunk_id,
+            model=f"codex/{model}",
             choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
         )
         await proc.wait()
