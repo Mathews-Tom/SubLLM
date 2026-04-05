@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
@@ -59,6 +60,15 @@ EffortLevel = Literal["low", "medium", "high", "max"]
 ThinkingMode = Literal["adaptive", "enabled", "disabled"]
 
 
+@dataclass(frozen=True)
+class ClaudeClientKey:
+    model: str
+    system_prompt: str
+    thinking: ThinkingMode
+    thinking_budget: int | None
+    effort: EffortLevel | None
+
+
 class ClaudeCodeProvider(Provider):
     """Routes completions through the Claude Code Agent SDK.
 
@@ -87,8 +97,9 @@ class ClaudeCodeProvider(Provider):
         self._effort = effort
         self._request_timeout = request_timeout
         self._stream_idle_timeout = stream_idle_timeout
-        # Persistent SDK client — connected on first use, reused across calls
-        self._sdk_client: ClaudeSDKClient | None = None
+        self._sdk_clients: dict[ClaudeClientKey, ClaudeSDKClient] = {}
+        self._client_locks: dict[ClaudeClientKey, asyncio.Lock] = {}
+        self._client_registry_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -249,21 +260,47 @@ class ClaudeCodeProvider(Provider):
             env=sdk_env,
         )
 
+    def _client_key(self, model: str, system_prompt: str | None = None) -> ClaudeClientKey:
+        return ClaudeClientKey(
+            model=self.resolve_model(model),
+            system_prompt=system_prompt or "",
+            thinking=self._thinking,
+            thinking_budget=self._thinking_budget,
+            effort=self._effort,
+        )
+
+    async def _create_sdk_client(self, options: ClaudeAgentOptions) -> ClaudeSDKClient:
+        client = ClaudeSDKClient(options)
+        await client.connect()
+        return client
+
+    async def _client_lock(self, key: ClaudeClientKey) -> asyncio.Lock:
+        async with self._client_registry_lock:
+            return self._client_locks.setdefault(key, asyncio.Lock())
+
     async def _ensure_sdk_client(
         self, model: str, *, system_prompt: str | None = None
     ) -> ClaudeSDKClient:
-        """Return the persistent SDK client, connecting on first use.
+        """Return the keyed SDK client, connecting on first use.
 
-        The client maintains a warm subprocess — subsequent calls skip spawn overhead.
+        Clients are isolated by immutable request config. Calls sharing the same
+        config reuse a warm subprocess; different configs get independent clients.
         """
-        if self._sdk_client is not None:
-            return self._sdk_client
+        key = self._client_key(model, system_prompt=system_prompt)
+        existing_client = self._sdk_clients.get(key)
+        if existing_client is not None:
+            return existing_client
 
-        options = self._build_sdk_options(model, system_prompt=system_prompt)
-        client = ClaudeSDKClient(options)
-        await client.connect()
-        self._sdk_client = client
-        return client
+        async with self._client_registry_lock:
+            existing_client = self._sdk_clients.get(key)
+            if existing_client is not None:
+                return existing_client
+
+            options = self._build_sdk_options(model, system_prompt=system_prompt)
+            client = await self._create_sdk_client(options)
+            self._sdk_clients[key] = client
+            self._client_locks.setdefault(key, asyncio.Lock())
+            return client
 
     async def complete(
         self,
@@ -311,47 +348,50 @@ class ClaudeCodeProvider(Provider):
         prompt = messages_to_prompt(messages, system_prompt)
 
         try:
-            client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-            await self._query_with_timeout(client, prompt)
+            client_key = self._client_key(model, system_prompt=system_prompt)
+            client_lock = await self._client_lock(client_key)
+            async with client_lock:
+                client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
+                await self._query_with_timeout(client, prompt)
 
-            content_parts: list[str] = []
-            usage_data: dict[str, Any] = {}
-            response_stream = client.receive_response()
+                content_parts: list[str] = []
+                usage_data: dict[str, Any] = {}
+                response_stream = client.receive_response()
 
-            while (message := await self._next_response(response_stream)) is not None:
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            content_parts.append(block.text)
-                elif isinstance(message, ResultMessage):
-                    if message.usage:
-                        usage_data = message.usage
-                    if message.is_error:
-                        raise ProviderFailureError(
-                            provider=self.name,
-                            message=f"SDK query failed: {message.result or 'unknown error'}",
+                while (message := await self._next_response(response_stream)) is not None:
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                content_parts.append(block.text)
+                    elif isinstance(message, ResultMessage):
+                        if message.usage:
+                            usage_data = message.usage
+                        if message.is_error:
+                            raise ProviderFailureError(
+                                provider=self.name,
+                                message=f"SDK query failed: {message.result or 'unknown error'}",
+                            )
+
+                content = "".join(content_parts)
+
+                # Use real usage data from ResultMessage if available, else estimate
+                prompt_tokens = usage_data.get("input_tokens", estimate_tokens(prompt))
+                completion_tokens = usage_data.get("output_tokens", estimate_tokens(content))
+
+                return ChatCompletionResponse(
+                    model=f"claude-code/{model}",
+                    choices=[
+                        Choice(
+                            message=Message(role="assistant", content=content),
+                            finish_reason="stop",
                         )
-
-            content = "".join(content_parts)
-
-            # Use real usage data from ResultMessage if available, else estimate
-            prompt_tokens = usage_data.get("input_tokens", estimate_tokens(prompt))
-            completion_tokens = usage_data.get("output_tokens", estimate_tokens(content))
-
-            return ChatCompletionResponse(
-                model=f"claude-code/{model}",
-                choices=[
-                    Choice(
-                        message=Message(role="assistant", content=content),
-                        finish_reason="stop",
-                    )
-                ],
-                usage=Usage(
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    total_tokens=prompt_tokens + completion_tokens,
-                ),
-            )
+                    ],
+                    usage=Usage(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    ),
+                )
 
         except (ProviderFailureError, ProviderTimeoutError):
             raise
@@ -380,8 +420,8 @@ class ClaudeCodeProvider(Provider):
         prompt = messages_to_prompt(messages, system_prompt)
 
         try:
-            client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-            await self._query_with_timeout(client, prompt)
+            client_key = self._client_key(model, system_prompt=system_prompt)
+            client_lock = await self._client_lock(client_key)
         except Exception as exc:
             if isinstance(exc, (ProviderFailureError, ProviderTimeoutError)):
                 raise
@@ -389,46 +429,58 @@ class ClaudeCodeProvider(Provider):
                 provider=self.name, message=f"SDK connection error: {exc}"
             ) from exc
 
-        chunk_id = f"chatcmpl-sdk-{id(client)}"
-        first = True
+        async with client_lock:
+            try:
+                client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
+                await self._query_with_timeout(client, prompt)
+            except Exception as exc:
+                if isinstance(exc, (ProviderFailureError, ProviderTimeoutError)):
+                    raise
+                raise ProviderFailureError(
+                    provider=self.name, message=f"SDK connection error: {exc}"
+                ) from exc
 
-        response_stream = client.receive_response()
-        while (message := await self._next_response(response_stream)) is not None:
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        yield ChatCompletionChunk(
-                            id=chunk_id,
-                            model=f"claude-code/{model}",
-                            choices=[
-                                StreamChoice(
-                                    delta=Delta(
-                                        role="assistant" if first else None,
-                                        content=block.text,
+            chunk_id = f"chatcmpl-sdk-{id(client)}"
+            first = True
+
+            response_stream = client.receive_response()
+            while (message := await self._next_response(response_stream)) is not None:
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            yield ChatCompletionChunk(
+                                id=chunk_id,
+                                model=f"claude-code/{model}",
+                                choices=[
+                                    StreamChoice(
+                                        delta=Delta(
+                                            role="assistant" if first else None,
+                                            content=block.text,
+                                        )
                                     )
-                                )
-                            ],
+                                ],
+                            )
+                            first = False
+                elif isinstance(message, ResultMessage):
+                    if message.is_error:
+                        raise ProviderFailureError(
+                            provider=self.name,
+                            message=f"SDK stream failed: {message.result or 'unknown error'}",
                         )
-                        first = False
-            elif isinstance(message, ResultMessage):
-                if message.is_error:
-                    raise ProviderFailureError(
-                        provider=self.name,
-                        message=f"SDK stream failed: {message.result or 'unknown error'}",
-                    )
 
-        yield ChatCompletionChunk(
-            id=chunk_id,
-            model=f"claude-code/{model}",
-            choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
-        )
+            yield ChatCompletionChunk(
+                id=chunk_id,
+                model=f"claude-code/{model}",
+                choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
+            )
 
     async def close(self) -> None:
-        """Disconnect the persistent SDK client if connected."""
-        if self._sdk_client is not None:
+        """Disconnect all keyed SDK clients."""
+        clients = list(self._sdk_clients.values())
+        self._sdk_clients.clear()
+        self._client_locks.clear()
+        for client in clients:
             try:
-                await self._sdk_client.disconnect()
+                await client.disconnect()
             except Exception:
                 logger.debug("SDK client disconnect error (ignored)", exc_info=True)
-            finally:
-                self._sdk_client = None
