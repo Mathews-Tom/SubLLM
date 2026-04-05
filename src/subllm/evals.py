@@ -204,8 +204,7 @@ def default_contract_fixture_dir() -> Path:
 def load_contract_cases(fixture_dir: str | Path) -> list[ContractCase]:
     root = Path(fixture_dir)
     return [
-        ContractCase.from_json(json.loads(path.read_text()))
-        for path in sorted(root.glob("*.json"))
+        ContractCase.from_json(json.loads(path.read_text())) for path in sorted(root.glob("*.json"))
     ]
 
 
@@ -355,7 +354,9 @@ def _assert_stream(
 
 def _subprocess_provider(provider_name: ProviderName) -> tuple[Provider, str]:
     if provider_name == "codex":
-        return CodexProvider(cli_path="codex"), "subllm.providers.codex.asyncio.create_subprocess_exec"
+        return CodexProvider(
+            cli_path="codex"
+        ), "subllm.providers.codex.asyncio.create_subprocess_exec"
     if provider_name == "gemini":
         return (
             GeminiCLIProvider(cli_path="gemini"),
