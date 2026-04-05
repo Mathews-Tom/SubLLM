@@ -36,6 +36,24 @@ def _run_models() -> None:
         print(f"  {m['id']}")
 
 
+def _run_docs(check: bool, write: bool) -> None:
+    from subllm.docs import validate_readme, write_readme
+
+    if write:
+        path = write_readme()
+        print(f"updated {path}")
+        return
+
+    result = validate_readme()
+    if result.valid:
+        print(f"validated {result.target}")
+        return
+
+    print(f"out of date: {result.target}")
+    if check:
+        raise SystemExit(1)
+
+
 def _run_completion(model: str, prompt: str, stream: bool) -> None:
     from subllm.router import complete_completion, stream_completion
 
@@ -133,6 +151,10 @@ def main() -> None:
     p_eval.add_argument("--fixture-dir")
     p_eval.add_argument("--json", action="store_true", dest="emit_json")
 
+    p_docs = sub.add_parser("docs", help="Validate or update generated registry docs")
+    p_docs.add_argument("--check", action="store_true")
+    p_docs.add_argument("--write", action="store_true")
+
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible proxy server")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8080)
@@ -153,6 +175,8 @@ def main() -> None:
         _run_completion(args.model, args.prompt, args.stream)
     elif args.command == "eval-contracts":
         _run_eval_contracts(args.fixture_dir, args.emit_json)
+    elif args.command == "docs":
+        _run_docs(args.check, args.write)
     elif args.command == "serve":
         _run_server(
             args.host,

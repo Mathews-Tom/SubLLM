@@ -23,6 +23,8 @@ jobs:
         run: uv run ruff format --check .
       - name: Strict Typing
         run: uv run mypy --strict src tests
+      - name: Validate Generated Docs
+        run: uv run subllm docs --check
 
   test-suite:
     runs-on: ubuntu-latest

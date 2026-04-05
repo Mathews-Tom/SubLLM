@@ -38,6 +38,11 @@ from claude_agent_sdk.types import (
 )
 
 from subllm.errors import ProviderFailureError, ProviderTimeoutError
+from subllm.model_registry import (
+    provider_capabilities,
+    provider_model_aliases,
+    resolve_provider_model,
+)
 from subllm.providers.base import (
     Provider,
     ProviderCapabilities,
@@ -57,12 +62,6 @@ from subllm.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-_MODEL_MAP: dict[str, str] = {
-    "opus-4-6": "claude-opus-4-6",
-    "sonnet-4-5": "claude-sonnet-4-5",
-    "haiku-4-5": "claude-haiku-4-5",
-}
 
 # SDK effort levels exposed through the provider interface
 EffortLevel = Literal["low", "medium", "high", "max"]
@@ -119,22 +118,18 @@ class ClaudeCodeProvider(Provider):
 
     @property
     def supported_models(self) -> list[str]:
-        return list(_MODEL_MAP.keys())
+        return provider_model_aliases(self.name)
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_streaming=True,
-            supports_sessions=True,
-            supports_system_prompt=True,
-            supports_vision=True,
-            max_context_tokens=200_000,
-            subscription_auth=True,
-            api_key_auth=True,
-        )
+        capabilities = provider_capabilities(self.name)
+        if capabilities is None:
+            raise RuntimeError(f"Missing model registry entry for provider '{self.name}'")
+        return capabilities
 
     def resolve_model(self, model_alias: str) -> str:
-        return _MODEL_MAP.get(model_alias, model_alias)
+        resolved = resolve_provider_model(self.name, model_alias)
+        return resolved or model_alias
 
     def _build_env(self) -> dict[str, str]:
         env = os.environ.copy()
