@@ -16,6 +16,12 @@ from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
 from subllm.providers.gemini_cli import GeminiCLIProvider
+from subllm.telemetry import (
+    attach_request_context,
+    get_tracer,
+    mark_span_failure,
+    mark_span_success,
+)
 from subllm.types import (
     AuthStatus,
     ChatCompletionChunk,
@@ -53,23 +59,79 @@ class Router:
 
     async def complete_request(self, request: CompletionRequest) -> ChatCompletionResponse:
         provider, model_alias = self._resolve(request.model)
-        return await provider.complete(
-            request.provider_messages,
-            model_alias,
-            system_prompt=request.effective_system_prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
+        started = time.perf_counter()
+        with get_tracer("subllm.router").start_as_current_span("subllm.completion") as span:
+            attach_request_context(span)
+            span.set_attribute("gen_ai.system", provider.name)
+            span.set_attribute("gen_ai.request.model", request.model)
+            span.set_attribute("subllm.model_alias", model_alias)
+            span.set_attribute("subllm.request.stream", False)
+            try:
+                response = await provider.complete(
+                    request.provider_messages,
+                    model_alias,
+                    system_prompt=request.effective_system_prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                )
+                if response.usage is not None:
+                    span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)
+                    span.set_attribute(
+                        "gen_ai.usage.output_tokens", response.usage.completion_tokens
+                    )
+                    span.set_attribute("gen_ai.usage.total_tokens", response.usage.total_tokens)
+                span.set_attribute(
+                    "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
+                )
+                mark_span_success(span)
+                return response
+            except Exception as exc:
+                span.set_attribute(
+                    "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
+                )
+                mark_span_failure(span, exc)
+                raise
 
     def stream_request(self, request: CompletionRequest) -> AsyncIterator[ChatCompletionChunk]:
         provider, model_alias = self._resolve(request.model)
-        return provider.stream(
-            request.provider_messages,
-            model_alias,
-            system_prompt=request.effective_system_prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
+        return self._stream_request(provider, model_alias, request)
+
+    async def _stream_request(
+        self,
+        provider: Provider,
+        model_alias: str,
+        request: CompletionRequest,
+    ) -> AsyncIterator[ChatCompletionChunk]:
+        started = time.perf_counter()
+        chunk_count = 0
+        with get_tracer("subllm.router").start_as_current_span("subllm.stream") as span:
+            attach_request_context(span)
+            span.set_attribute("gen_ai.system", provider.name)
+            span.set_attribute("gen_ai.request.model", request.model)
+            span.set_attribute("subllm.model_alias", model_alias)
+            span.set_attribute("subllm.request.stream", True)
+            try:
+                async for chunk in provider.stream(
+                    request.provider_messages,
+                    model_alias,
+                    system_prompt=request.effective_system_prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                ):
+                    chunk_count += 1
+                    yield chunk
+                span.set_attribute("subllm.stream.chunk_count", chunk_count)
+                span.set_attribute(
+                    "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
+                )
+                mark_span_success(span)
+            except Exception as exc:
+                span.set_attribute("subllm.stream.chunk_count", chunk_count)
+                span.set_attribute(
+                    "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
+                )
+                mark_span_failure(span, exc)
+                raise
 
     def supported_model_ids(self, provider_name: str | None = None) -> list[str]:
         models = self.list_models()
