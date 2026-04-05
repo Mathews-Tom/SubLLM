@@ -8,7 +8,14 @@ import pytest
 
 from subllm.server import create_app
 from subllm.server_api.settings import ServerSettings
-from subllm.types import ChatCompletionChunk, ChatCompletionResponse, Choice, Delta, Message, StreamChoice
+from subllm.types import (
+    ChatCompletionChunk,
+    ChatCompletionResponse,
+    Choice,
+    Delta,
+    Message,
+    StreamChoice,
+)
 
 
 def test_sync_completion_integration(monkeypatch: pytest.MonkeyPatch) -> None:
