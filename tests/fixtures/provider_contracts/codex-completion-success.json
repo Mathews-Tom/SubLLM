@@ -1,0 +1,24 @@
+{
+  "name": "codex-completion-success",
+  "provider": "codex",
+  "mode": "completion",
+  "model": "gpt-5.2",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "stdout_lines": [
+    "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"codex says hi\"}}\n",
+    "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":4,\"output_tokens\":6}}\n"
+  ],
+  "expectation": {
+    "content": "codex says hi",
+    "usage": {
+      "prompt_tokens": 4,
+      "completion_tokens": 6,
+      "total_tokens": 10
+    }
+  }
+}
