@@ -51,6 +51,15 @@ from subllm.evals import (
     run_contract_case,
     run_contract_suite,
 )
+from subllm.model_registry import (
+    all_model_descriptors,
+    all_model_entries,
+    provider_capabilities,
+    provider_model_aliases,
+    provider_model_entries,
+    provider_registry_entry,
+    registered_provider_names,
+)
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.router import (
     Router,
@@ -85,9 +94,16 @@ __all__ = [
     "close",
     "completion",
     "default_contract_fixture_dir",
+    "all_model_descriptors",
+    "all_model_entries",
     "get_router",
     "load_contract_cases",
     "list_models",
+    "provider_capabilities",
+    "provider_model_aliases",
+    "provider_model_entries",
+    "provider_registry_entry",
+    "registered_provider_names",
     "run_contract_case",
     "run_contract_suite",
     "AuthStatus",

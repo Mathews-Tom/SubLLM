@@ -12,6 +12,12 @@ from collections.abc import AsyncIterator
 from typing import Any, Mapping, Sequence
 
 from subllm.errors import UnknownModelError, UnsupportedFeatureError
+from subllm.model_registry import (
+    all_model_descriptors,
+    provider_capabilities,
+    provider_model_aliases,
+    registered_provider_names,
+)
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
@@ -51,10 +57,13 @@ class Router:
         return list(self._providers.keys())
 
     def list_models(self) -> list[ModelDescriptor]:
-        models: list[ModelDescriptor] = []
-        for pname, provider in self._providers.items():
-            for m in provider.supported_models:
-                models.append({"id": f"{pname}/{m}", "provider": pname})
+        models = list(all_model_descriptors())
+        registry_providers = set(registered_provider_names())
+        for provider_name, provider in self._providers.items():
+            if provider_name in registry_providers:
+                continue
+            for model_alias in provider.supported_models:
+                models.append({"id": f"{provider_name}/{model_alias}", "provider": provider_name})
         return models
 
     async def complete_request(self, request: CompletionRequest) -> ChatCompletionResponse:
@@ -140,6 +149,9 @@ class Router:
         return sorted(model["id"] for model in models if model["provider"] == provider_name)
 
     def get_capabilities(self, provider_name: str) -> ProviderCapabilities | None:
+        capabilities = provider_capabilities(provider_name)
+        if capabilities is not None:
+            return capabilities
         provider = self._providers.get(provider_name)
         return provider.capabilities if provider else None
 
@@ -208,7 +220,11 @@ class Router:
         if provider is None:
             raise UnknownModelError(model=model, supported_models=self.supported_model_ids())
 
-        if model_alias not in provider.supported_models:
+        supported_models = provider_model_aliases(provider_name)
+        if not supported_models:
+            supported_models = provider.supported_models
+
+        if model_alias not in supported_models:
             raise UnknownModelError(
                 model=model,
                 supported_models=self.supported_model_ids(provider_name),

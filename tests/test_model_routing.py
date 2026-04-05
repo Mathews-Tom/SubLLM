@@ -44,6 +44,22 @@ def test_router_resolves_supported_prefixed_model_ids() -> None:
     assert model_alias == "gpt-5.2"
 
 
+def test_router_list_models_uses_registry_metadata() -> None:
+    router = Router()
+
+    assert router.list_models() == [
+        {"id": "claude-code/opus-4-6", "provider": "claude-code"},
+        {"id": "claude-code/sonnet-4-5", "provider": "claude-code"},
+        {"id": "claude-code/haiku-4-5", "provider": "claude-code"},
+        {"id": "codex/gpt-5.2", "provider": "codex"},
+        {"id": "codex/gpt-5.2-codex", "provider": "codex"},
+        {"id": "codex/gpt-4.1", "provider": "codex"},
+        {"id": "codex/gpt-5-mini", "provider": "codex"},
+        {"id": "gemini/gemini-3-pro-preview", "provider": "gemini"},
+        {"id": "gemini/gemini-3-flash-preview", "provider": "gemini"},
+    ]
+
+
 @pytest.mark.asyncio
 async def test_router_batch_rejects_stream_requests() -> None:
     router = Router()

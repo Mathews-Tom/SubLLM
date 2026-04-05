@@ -22,6 +22,11 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from subllm.errors import ProviderFailureError, ProviderTimeoutError
+from subllm.model_registry import (
+    provider_capabilities,
+    provider_model_aliases,
+    resolve_provider_model,
+)
 from subllm.providers.base import (
     Provider,
     ProviderCapabilities,
@@ -39,11 +44,6 @@ from subllm.types import (
     StreamChoice,
     Usage,
 )
-
-_MODEL_MAP: dict[str, str] = {
-    "gemini-3-pro-preview": "gemini-3-pro-preview",
-    "gemini-3-flash-preview": "gemini-3-flash-preview",
-}
 
 
 class GeminiCLIProvider(Provider):
@@ -67,22 +67,18 @@ class GeminiCLIProvider(Provider):
 
     @property
     def supported_models(self) -> list[str]:
-        return list(_MODEL_MAP.keys())
+        return provider_model_aliases(self.name)
 
     @property
     def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(
-            supports_streaming=True,
-            supports_sessions=False,  # Not in headless -p mode
-            supports_system_prompt=True,
-            supports_vision=True,
-            max_context_tokens=1_000_000,  # Gemini 2.5 Pro: 1M context
-            subscription_auth=True,  # Google AI Pro/Ultra
-            api_key_auth=True,  # GEMINI_API_KEY (free tier)
-        )
+        capabilities = provider_capabilities(self.name)
+        if capabilities is None:
+            raise RuntimeError(f"Missing model registry entry for provider '{self.name}'")
+        return capabilities
 
     def resolve_model(self, model_alias: str) -> str:
-        return _MODEL_MAP.get(model_alias, model_alias)
+        resolved = resolve_provider_model(self.name, model_alias)
+        return resolved or model_alias
 
     def _build_env(self) -> dict[str, str]:
         env = os.environ.copy()
