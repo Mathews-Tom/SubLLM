@@ -85,7 +85,7 @@ class Router:
             resolved_prompt.text if resolved_prompt is not None else None
         )
         provider_messages = request.provider_messages
-        self._validate_message_capabilities(provider.name, provider_messages)
+        self._validate_request_capabilities(provider.name, request, provider_messages)
         cache_key = self._build_cache_key(
             provider_name=provider.name,
             request=request,
@@ -99,6 +99,9 @@ class Router:
             span.set_attribute("gen_ai.request.model", request.model)
             span.set_attribute("subllm.model_alias", model_alias)
             span.set_attribute("subllm.request.stream", False)
+            span.set_attribute("subllm.session.enabled", request.session is not None)
+            if request.session is not None:
+                span.set_attribute("subllm.session.mode", request.session.mode)
             self._attach_prompt_attributes(span, resolved_prompt)
             if cache_key is None:
                 set_cache_status("bypass")
@@ -125,6 +128,7 @@ class Router:
                     system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
+                    session=request.session,
                 )
                 if response.usage is not None:
                     span.set_attribute("gen_ai.usage.input_tokens", response.usage.prompt_tokens)
@@ -163,7 +167,7 @@ class Router:
             resolved_prompt.text if resolved_prompt is not None else None
         )
         provider_messages = request.provider_messages
-        self._validate_message_capabilities(provider.name, provider_messages)
+        self._validate_request_capabilities(provider.name, request, provider_messages)
         started = time.perf_counter()
         chunk_count = 0
         with get_tracer("subllm.router").start_as_current_span("subllm.stream") as span:
@@ -172,6 +176,9 @@ class Router:
             span.set_attribute("gen_ai.request.model", request.model)
             span.set_attribute("subllm.model_alias", model_alias)
             span.set_attribute("subllm.request.stream", True)
+            span.set_attribute("subllm.session.enabled", request.session is not None)
+            if request.session is not None:
+                span.set_attribute("subllm.session.mode", request.session.mode)
             self._attach_prompt_attributes(span, resolved_prompt)
             try:
                 async for chunk in provider.stream(
@@ -180,6 +187,7 @@ class Router:
                     system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
+                    session=request.session,
                 ):
                     chunk_count += 1
                     yield chunk
@@ -309,14 +317,20 @@ class Router:
         span.set_attribute("subllm.prompt.name", resolved_prompt.name)
         span.set_attribute("subllm.prompt.version", resolved_prompt.version)
 
-    def _validate_message_capabilities(
+    def _validate_request_capabilities(
         self,
         provider_name: str,
+        request: CompletionRequest,
         messages: list[ProviderMessage],
     ) -> None:
         capabilities = self.get_capabilities(provider_name)
         if capabilities is None:
             return
+        if request.session is not None and not capabilities.supports_sessions:
+            raise UnsupportedFeatureError(
+                field="session",
+                message=f"Provider '{provider_name}' does not support explicit session mode",
+            )
         if (
             any(message_has_images(message) for message in messages)
             and not capabilities.supports_vision
@@ -334,7 +348,7 @@ class Router:
         resolved_prompt: ResolvedPrompt | None,
         system_prompt: str | None,
     ) -> str | None:
-        if self._response_cache is None or request.stream:
+        if self._response_cache is None or request.stream or request.session is not None:
             return None
         return build_cache_key(
             provider_name=provider_name,
@@ -353,6 +367,7 @@ class Router:
         max_tokens: int | None = None,
         temperature: float | None = None,
         prompt: Mapping[str, Any] | None = None,
+        session: Mapping[str, Any] | None = None,
     ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
         request = CompletionRequest.from_inputs(
             model=model,
@@ -362,6 +377,7 @@ class Router:
             max_tokens=max_tokens,
             temperature=temperature,
             prompt=prompt,
+            session=session,
         )
         if request.stream:
             return self.stream_request(request)
@@ -396,6 +412,11 @@ class Router:
                             field="stream",
                             message="Batch requests do not support streaming responses",
                         )
+                    if request.session is not None:
+                        raise UnsupportedFeatureError(
+                            field="session",
+                            message="Batch requests do not support explicit session mode",
+                        )
                     return await self.complete_request(request)
                 except Exception as e:
                     return e
@@ -418,6 +439,7 @@ async def completion(
     max_tokens: int | None = None,
     temperature: float | None = None,
     prompt: Mapping[str, Any] | None = None,
+    session: Mapping[str, Any] | None = None,
 ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
     """OpenAI-compatible completion function.
 
@@ -442,6 +464,7 @@ async def completion(
         max_tokens=max_tokens,
         temperature=temperature,
         prompt=prompt,
+        session=session,
     )
 
 
@@ -453,6 +476,7 @@ async def complete_completion(
     max_tokens: int | None = None,
     temperature: float | None = None,
     prompt: Mapping[str, Any] | None = None,
+    session: Mapping[str, Any] | None = None,
 ) -> ChatCompletionResponse:
     request = CompletionRequest.from_inputs(
         model=model,
@@ -462,6 +486,7 @@ async def complete_completion(
         max_tokens=max_tokens,
         temperature=temperature,
         prompt=prompt,
+        session=session,
     )
     return await _router.complete_request(request)
 
@@ -474,6 +499,7 @@ def stream_completion(
     max_tokens: int | None = None,
     temperature: float | None = None,
     prompt: Mapping[str, Any] | None = None,
+    session: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[ChatCompletionChunk]:
     request = CompletionRequest.from_inputs(
         model=model,
@@ -483,6 +509,7 @@ def stream_completion(
         max_tokens=max_tokens,
         temperature=temperature,
         prompt=prompt,
+        session=session,
     )
     return _router.stream_request(request)
 

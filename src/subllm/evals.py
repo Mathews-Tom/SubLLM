@@ -171,13 +171,14 @@ class _FakeResultMessage:
     is_error: bool
     result: str | None = None
     usage: dict[str, int] | None = None
+    session_id: str = "fake-session"
 
 
 class _FakeClaudeClient:
     def __init__(self, events: list[dict[str, Any]]) -> None:
         self._events = events
 
-    async def query(self, prompt: str) -> None:
+    async def query(self, prompt: str, session_id: str = "default") -> None:
         return None
 
     async def receive_response(self):  # type: ignore[no-untyped-def]

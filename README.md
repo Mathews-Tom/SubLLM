@@ -127,10 +127,11 @@ response = client.chat.completions.create(
 
 SubLLM implements a strict subset of the OpenAI chat completions contract.
 
-- Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `stream`, `system_prompt`, `temperature`
+- Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `session`, `stream`, `system_prompt`, `temperature`
 - Supported message roles: `system`, `user`, `assistant`
 - Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts
 - Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`
+- Explicit session mode is opt-in through the `session` field. Stateless requests do not reuse prior provider conversation state.
 - Registered prompt references are accepted through the `prompt` field and resolve to versioned system prompt text before provider dispatch.
 - Unsupported chat-completions fields are rejected explicitly. Common examples: `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, `logprobs`, `top_logprobs`, `n`, `metadata`, `modalities`, `audio`, `store`, `user`, `reasoning`
 

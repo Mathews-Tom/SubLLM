@@ -79,6 +79,15 @@ class PromptReference(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict)
 
 
+class SessionRequest(BaseModel):
+    """Explicit stateful execution request."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    mode: Literal["create", "resume"]
+    id: str | None = Field(default=None, min_length=1)
+
+
 class ModelDescriptor(TypedDict):
     id: str
     provider: str
@@ -90,7 +99,16 @@ class CompletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     supported_fields: ClassVar[frozenset[str]] = frozenset(
-        {"model", "messages", "stream", "system_prompt", "max_tokens", "temperature", "prompt"}
+        {
+            "model",
+            "messages",
+            "stream",
+            "system_prompt",
+            "max_tokens",
+            "temperature",
+            "prompt",
+            "session",
+        }
     )
 
     model: str = Field(min_length=1)
@@ -100,6 +118,7 @@ class CompletionRequest(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     prompt: PromptReference | None = None
+    session: SessionRequest | None = None
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> CompletionRequest:
@@ -112,9 +131,11 @@ class CompletionRequest(BaseModel):
             )
 
         try:
-            return cls.model_validate(data)
+            request = cls.model_validate(data)
         except Exception as exc:
             raise MalformedRequestError.from_validation_error(exc) from exc
+        request._validate_session_shape()
+        return request
 
     @classmethod
     def from_inputs(
@@ -127,6 +148,7 @@ class CompletionRequest(BaseModel):
         max_tokens: int | None = None,
         temperature: float | None = None,
         prompt: Mapping[str, Any] | None = None,
+        session: Mapping[str, Any] | None = None,
     ) -> CompletionRequest:
         return cls.from_mapping(
             {
@@ -137,8 +159,23 @@ class CompletionRequest(BaseModel):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "prompt": dict(prompt) if prompt is not None else None,
+                "session": dict(session) if session is not None else None,
             }
         )
+
+    def _validate_session_shape(self) -> None:
+        if self.session is None:
+            return
+        if self.session.mode == "resume" and self.session.id is None:
+            raise MalformedRequestError(
+                "Session resume requests must include session.id",
+                param="session.id",
+            )
+        if self.session.mode == "create" and self.session.id is not None:
+            raise MalformedRequestError(
+                "Session create requests must not include session.id",
+                param="session.id",
+            )
 
     @property
     def effective_system_prompt(self) -> str | None:
@@ -181,6 +218,12 @@ class Usage:
 
 
 @dataclass
+class ResponseSession:
+    id: str
+    mode: Literal["create", "resume"]
+
+
+@dataclass
 class Message:
     role: str = "assistant"
     content: str | None = None
@@ -214,6 +257,7 @@ class ChatCompletionResponse:
     model: str = ""
     choices: list[Choice] = field(default_factory=list)
     usage: Usage | None = None
+    session: ResponseSession | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -238,6 +282,14 @@ class ChatCompletionResponse:
                 if self.usage
                 else None
             ),
+            "session": (
+                {
+                    "id": self.session.id,
+                    "mode": self.session.mode,
+                }
+                if self.session is not None
+                else None
+            ),
         }
 
 
@@ -248,6 +300,7 @@ class ChatCompletionChunk:
     created: int = field(default_factory=lambda: int(time.time()))
     model: str = ""
     choices: list[StreamChoice] = field(default_factory=list)
+    session: ResponseSession | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -263,6 +316,14 @@ class ChatCompletionChunk:
                 }
                 for c in self.choices
             ],
+            "session": (
+                {
+                    "id": self.session.id,
+                    "mode": self.session.mode,
+                }
+                if self.session is not None
+                else None
+            ),
         }
 
 
