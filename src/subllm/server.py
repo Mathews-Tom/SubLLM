@@ -11,19 +11,15 @@ Then use with ANY OpenAI-compatible client:
     )
 """
 
-from __future__ import annotations
-
 import json
 import time
-from typing import TYPE_CHECKING
 
+from subllm.errors import MalformedRequestError, SubLLMError
 from subllm.router import Router
-
-if TYPE_CHECKING:
-    from fastapi import FastAPI
+from subllm.types import CompletionRequest
 
 
-def create_app() -> FastAPI:
+def create_app():
     """Create FastAPI app with OpenAI-compatible endpoints."""
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse, StreamingResponse
@@ -47,29 +43,40 @@ def create_app() -> FastAPI:
             ],
         }
 
+    @app.exception_handler(SubLLMError)
+    async def handle_subllm_error(_request: Request, exc: SubLLMError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content=exc.to_response())
+
+    @app.exception_handler(Exception)
+    async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
+        error = SubLLMError(
+            str(exc) or "Internal server error",
+            code="internal_error",
+            error_type="server_error",
+            status_code=500,
+        )
+        return JSONResponse(status_code=error.status_code, content=error.to_response())
+
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise MalformedRequestError("Request body must be valid JSON") from exc
 
-        model = body.get("model", "claude-code/sonnet-4-5")
-        messages = body.get("messages", [])
-        stream = body.get("stream", False)
-        max_tokens = body.get("max_tokens")
-        temperature = body.get("temperature")
+        if not isinstance(body, dict):
+            raise MalformedRequestError("Request body must be a JSON object")
 
-        # Extract system prompt from messages
-        system_prompt = None
-        filtered_messages = []
-        for msg in messages:
-            if msg.get("role") == "system":
-                system_prompt = msg.get("content", "")
-            else:
-                filtered_messages.append(msg)
+        completion_request = CompletionRequest.from_mapping(body)
 
-        if stream:
+        if completion_request.stream:
             result = await router.completion(
-                model=model, messages=filtered_messages, stream=True,
-                system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature,
+                model=completion_request.model,
+                messages=completion_request.provider_messages,
+                stream=True,
+                system_prompt=completion_request.effective_system_prompt,
+                max_tokens=completion_request.max_tokens,
+                temperature=completion_request.temperature,
             )
 
             async def event_stream():
@@ -85,8 +92,11 @@ def create_app() -> FastAPI:
             )
         else:
             result = await router.completion(
-                model=model, messages=filtered_messages,
-                system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature,
+                model=completion_request.model,
+                messages=completion_request.provider_messages,
+                system_prompt=completion_request.effective_system_prompt,
+                max_tokens=completion_request.max_tokens,
+                temperature=completion_request.temperature,
             )
             return JSONResponse(result.to_dict())
 
