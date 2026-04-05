@@ -128,6 +128,7 @@ response = client.chat.completions.create(
 
 SubLLM implements a strict subset of the OpenAI chat completions contract.
 
+- Experimental package intended for personal use and small internal evaluation only
 - Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `session`, `stream`, `system_prompt`, `temperature`
 - Supported message roles: `system`, `user`, `assistant`
 - Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts
