@@ -139,6 +139,8 @@ def test_server_refuses_non_local_host_without_auth(monkeypatch: pytest.MonkeyPa
             max_request_bytes=None,
             request_timeout_seconds=None,
             rate_limit_per_minute=None,
+            response_cache_ttl_seconds=None,
+            response_cache_max_entries=None,
             trace_export_path=None,
             trace_service_name=None,
         )
