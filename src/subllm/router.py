@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from subllm.errors import UnknownModelError
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
@@ -43,6 +44,12 @@ class Router:
             for m in provider.supported_models:
                 models.append({"id": f"{pname}/{m}", "provider": pname})
         return models
+
+    def supported_model_ids(self, provider_name: str | None = None) -> list[str]:
+        models = self.list_models()
+        if provider_name is None:
+            return sorted(model["id"] for model in models)
+        return sorted(model["id"] for model in models if model["provider"] == provider_name)
 
     def get_capabilities(self, provider_name: str) -> ProviderCapabilities | None:
         provider = self._providers.get(provider_name)
@@ -97,19 +104,33 @@ class Router:
             await provider.close()
 
     def _resolve(self, model: str) -> tuple[Provider, str]:
-        """Parse 'provider/model' and return (provider_instance, model_alias)."""
-        if "/" in model:
-            prefix, model_alias = model.split("/", 1)
-            if prefix in self._providers:
-                return self._providers[prefix], model_alias
+        """Parse 'provider/model' and return the validated provider and alias."""
+        if "/" not in model:
+            raise UnknownModelError(
+                model=model,
+                supported_models=self.supported_model_ids(),
+                detail=(
+                    f"Unsupported model '{model}'. Model IDs must include a provider prefix. "
+                    f"Use one of: {', '.join(self.supported_model_ids())}"
+                ),
+            )
 
-        for name in ["claude-code", "codex", "gemini"]:
-            if name in self._providers:
-                return self._providers[name], model
+        provider_name, model_alias = model.split("/", 1)
+        provider = self._providers.get(provider_name)
+        if provider is None:
+            raise UnknownModelError(model=model, supported_models=self.supported_model_ids())
 
-        raise ValueError(
-            f"No provider found for model '{model}'. Available: {', '.join(self.list_providers())}"
-        )
+        if model_alias not in provider.supported_models:
+            raise UnknownModelError(
+                model=model,
+                supported_models=self.supported_model_ids(provider_name),
+                detail=(
+                    f"Unsupported model '{model}'. Supported models for provider "
+                    f"'{provider_name}': {', '.join(self.supported_model_ids(provider_name))}"
+                ),
+            )
+
+        return provider, model_alias
 
     async def completion(
         self,

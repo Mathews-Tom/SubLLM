@@ -70,3 +70,20 @@ class UnsupportedFeatureError(SubLLMError):
             status_code=400,
             param=field,
         )
+
+
+class UnknownModelError(SubLLMError):
+    """Raised when a request references an unknown or ambiguous model."""
+
+    def __init__(
+        self, *, model: str, supported_models: list[str], detail: str | None = None
+    ) -> None:
+        supported = ", ".join(supported_models)
+        message = detail or (f"Unsupported model '{model}'. Use one of: {supported}")
+        super().__init__(
+            message,
+            code="model_not_found",
+            error_type="invalid_request_error",
+            status_code=400,
+            param="model",
+        )

@@ -30,7 +30,12 @@ Usage:
 
 from __future__ import annotations
 
-from subllm.errors import MalformedRequestError, SubLLMError, UnsupportedFeatureError
+from subllm.errors import (
+    MalformedRequestError,
+    SubLLMError,
+    UnknownModelError,
+    UnsupportedFeatureError,
+)
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.router import (
     Router,
@@ -70,5 +75,6 @@ __all__ = [
     "MalformedRequestError",
     "RequestMessage",
     "SubLLMError",
+    "UnknownModelError",
     "UnsupportedFeatureError",
 ]
