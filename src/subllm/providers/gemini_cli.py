@@ -21,6 +21,7 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from subllm.errors import ProviderFailureError, ProviderTimeoutError
 from subllm.providers.base import (
     Provider,
     ProviderCapabilities,
@@ -51,9 +52,13 @@ class GeminiCLIProvider(Provider):
         self,
         cli_path: str | None = None,
         env_overrides: dict[str, str] | None = None,
+        command_timeout: float = 60.0,
+        stream_idle_timeout: float = 30.0,
     ):
         self._cli_path = cli_path or shutil.which("gemini") or "gemini"
         self._env_overrides = env_overrides or {}
+        self._command_timeout = command_timeout
+        self._stream_idle_timeout = stream_idle_timeout
 
     @property
     def name(self) -> str:
@@ -189,6 +194,20 @@ class GeminiCLIProvider(Provider):
         resolved = self.resolve_model(model)
         return [self._cli_path, "-p", prompt, "--model", resolved, "--output-format", output_format]
 
+    async def _terminate_process(self, proc: asyncio.subprocess.Process) -> None:
+        if proc.returncode is not None:
+            return
+        proc.kill()
+        try:
+            await proc.wait()
+        except Exception:
+            return
+
+    async def _read_stderr(self, proc: asyncio.subprocess.Process) -> str:
+        if proc.stderr is None:
+            return ""
+        return (await proc.stderr.read()).decode().strip()
+
     async def complete(
         self,
         messages: list[dict],
@@ -207,11 +226,23 @@ class GeminiCLIProvider(Provider):
             stderr=asyncio.subprocess.PIPE,
             env=self._build_env(),
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self._command_timeout,
+            )
+        except asyncio.TimeoutError as exc:
+            await self._terminate_process(proc)
+            raise ProviderTimeoutError(
+                provider=self.name,
+                operation="completion",
+                timeout_seconds=self._command_timeout,
+            ) from exc
 
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"Gemini CLI failed (exit {proc.returncode}): {stderr.decode().strip()}"
+            raise ProviderFailureError(
+                provider=self.name,
+                message=f"Gemini CLI failed (exit {proc.returncode}): {stderr.decode().strip()}",
             )
 
         raw = stdout.decode().strip()
@@ -275,9 +306,25 @@ class GeminiCLIProvider(Provider):
 
         chunk_id = f"chatcmpl-gemini-{id(proc)}"
         first = True
+        stream_error: str | None = None
 
         assert proc.stdout is not None
-        async for line_bytes in proc.stdout:
+        while True:
+            try:
+                line_bytes = await asyncio.wait_for(
+                    proc.stdout.readline(),
+                    timeout=self._stream_idle_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                await self._terminate_process(proc)
+                raise ProviderTimeoutError(
+                    provider=self.name,
+                    operation="stream",
+                    timeout_seconds=self._stream_idle_timeout,
+                ) from exc
+
+            if not line_bytes:
+                break
             line = line_bytes.decode().strip()
             if not line:
                 continue
@@ -298,6 +345,9 @@ class GeminiCLIProvider(Provider):
                 elif event_type == "content":
                     text = event.get("value", "")
                 elif event_type == "result":
+                    if event.get("status") not in {None, "success"}:
+                        stream_error = f"Gemini stream failed: {event.get('status', 'unknown')}"
+                        break
                     continue  # Stats-only, skip
 
                 if text:
@@ -330,9 +380,28 @@ class GeminiCLIProvider(Provider):
                     )
                     first = False
 
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=self._command_timeout)
+        except asyncio.TimeoutError as exc:
+            await self._terminate_process(proc)
+            raise ProviderTimeoutError(
+                provider=self.name,
+                operation="stream shutdown",
+                timeout_seconds=self._command_timeout,
+            ) from exc
+
+        stderr_text = await self._read_stderr(proc)
+        if stream_error is not None:
+            details = f"{stream_error}. {stderr_text}".strip().rstrip(".")
+            raise ProviderFailureError(provider=self.name, message=details)
+        if proc.returncode != 0:
+            raise ProviderFailureError(
+                provider=self.name,
+                message=f"Gemini CLI failed (exit {proc.returncode}): {stderr_text}",
+            )
+
         yield ChatCompletionChunk(
             id=chunk_id,
             model=f"gemini/{model}",
             choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
         )
-        await proc.wait()

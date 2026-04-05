@@ -26,6 +26,7 @@ from typing import Any, Literal
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
+from subllm.errors import ProviderFailureError, ProviderTimeoutError
 from subllm.providers.base import (
     Provider,
     ProviderCapabilities,
@@ -76,12 +77,16 @@ class ClaudeCodeProvider(Provider):
         thinking: ThinkingMode = "adaptive",
         thinking_budget: int | None = None,
         effort: EffortLevel | None = None,
+        request_timeout: float = 60.0,
+        stream_idle_timeout: float = 30.0,
     ):
         self._cli_path = cli_path or shutil.which("claude") or "claude"
         self._env_overrides = env_overrides or {}
         self._thinking = thinking
         self._thinking_budget = thinking_budget
         self._effort = effort
+        self._request_timeout = request_timeout
+        self._stream_idle_timeout = stream_idle_timeout
         # Persistent SDK client — connected on first use, reused across calls
         self._sdk_client: ClaudeSDKClient | None = None
 
@@ -271,6 +276,31 @@ class ClaudeCodeProvider(Provider):
     ) -> ChatCompletionResponse:
         return await self._complete(messages, model, system_prompt=system_prompt)
 
+    async def _query_with_timeout(self, client: ClaudeSDKClient, prompt: str) -> None:
+        try:
+            await asyncio.wait_for(client.query(prompt), timeout=self._request_timeout)
+        except asyncio.TimeoutError as exc:
+            raise ProviderTimeoutError(
+                provider=self.name,
+                operation="completion",
+                timeout_seconds=self._request_timeout,
+            ) from exc
+
+    async def _next_response(
+        self,
+        response_stream: AsyncIterator[AssistantMessage | ResultMessage],
+    ) -> AssistantMessage | ResultMessage | None:
+        try:
+            return await asyncio.wait_for(anext(response_stream), timeout=self._stream_idle_timeout)
+        except StopAsyncIteration:
+            return None
+        except asyncio.TimeoutError as exc:
+            raise ProviderTimeoutError(
+                provider=self.name,
+                operation="stream",
+                timeout_seconds=self._stream_idle_timeout,
+            ) from exc
+
     async def _complete(
         self,
         messages: list[dict],
@@ -282,12 +312,13 @@ class ClaudeCodeProvider(Provider):
 
         try:
             client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-            await client.query(prompt)
+            await self._query_with_timeout(client, prompt)
 
             content_parts: list[str] = []
             usage_data: dict[str, Any] = {}
+            response_stream = client.receive_response()
 
-            async for message in client.receive_response():
+            while (message := await self._next_response(response_stream)) is not None:
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
@@ -296,7 +327,10 @@ class ClaudeCodeProvider(Provider):
                     if message.usage:
                         usage_data = message.usage
                     if message.is_error:
-                        raise RuntimeError(f"SDK query failed: {message.result or 'unknown error'}")
+                        raise ProviderFailureError(
+                            provider=self.name,
+                            message=f"SDK query failed: {message.result or 'unknown error'}",
+                        )
 
             content = "".join(content_parts)
 
@@ -319,10 +353,10 @@ class ClaudeCodeProvider(Provider):
                 ),
             )
 
-        except RuntimeError:
+        except (ProviderFailureError, ProviderTimeoutError):
             raise
         except Exception as exc:
-            raise RuntimeError(f"SDK error: {exc}") from exc
+            raise ProviderFailureError(provider=self.name, message=f"SDK error: {exc}") from exc
 
     async def stream(
         self,
@@ -347,14 +381,19 @@ class ClaudeCodeProvider(Provider):
 
         try:
             client = await self._ensure_sdk_client(model, system_prompt=system_prompt)
-            await client.query(prompt)
+            await self._query_with_timeout(client, prompt)
         except Exception as exc:
-            raise RuntimeError(f"SDK connection error: {exc}") from exc
+            if isinstance(exc, (ProviderFailureError, ProviderTimeoutError)):
+                raise
+            raise ProviderFailureError(
+                provider=self.name, message=f"SDK connection error: {exc}"
+            ) from exc
 
         chunk_id = f"chatcmpl-sdk-{id(client)}"
         first = True
 
-        async for message in client.receive_response():
+        response_stream = client.receive_response()
+        while (message := await self._next_response(response_stream)) is not None:
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
@@ -373,7 +412,10 @@ class ClaudeCodeProvider(Provider):
                         first = False
             elif isinstance(message, ResultMessage):
                 if message.is_error:
-                    logger.error("SDK stream error: %s", message.result)
+                    raise ProviderFailureError(
+                        provider=self.name,
+                        message=f"SDK stream failed: {message.result or 'unknown error'}",
+                    )
 
         yield ChatCompletionChunk(
             id=chunk_id,
