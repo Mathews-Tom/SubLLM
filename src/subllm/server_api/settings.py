@@ -15,6 +15,8 @@ class ServerSettings:
     max_request_bytes: int = 1_048_576
     request_timeout_seconds: float = 60.0
     rate_limit_per_minute: int = 120
+    trace_export_path: str | None = None
+    trace_service_name: str = "subllm-server"
 
     @classmethod
     def from_inputs(
@@ -24,6 +26,8 @@ class ServerSettings:
         max_request_bytes: int | None = None,
         request_timeout_seconds: float | None = None,
         rate_limit_per_minute: int | None = None,
+        trace_export_path: str | None = None,
+        trace_service_name: str | None = None,
     ) -> ServerSettings:
         return cls(
             auth_token=auth_token or os.getenv("SUBLLM_SERVER_AUTH_TOKEN"),
@@ -33,6 +37,10 @@ class ServerSettings:
             or float(os.getenv("SUBLLM_SERVER_REQUEST_TIMEOUT_SECONDS", "60")),
             rate_limit_per_minute=rate_limit_per_minute
             or int(os.getenv("SUBLLM_SERVER_RATE_LIMIT_PER_MINUTE", "120")),
+            trace_export_path=trace_export_path or os.getenv("SUBLLM_TRACE_EXPORT_PATH"),
+            trace_service_name=trace_service_name
+            or os.getenv("SUBLLM_TRACE_SERVICE_NAME")
+            or "subllm-server",
         )
 
 
