@@ -101,12 +101,14 @@ async def main() -> None:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     streamed.append(delta.content)
-                    live.update(Panel(
-                        streamed,
-                        title=f"[bold]Streaming — {model}[/]",
-                        subtitle=f"[dim]{_fmt(time.perf_counter() - t0)}[/]",
-                        border_style="green",
-                    ))
+                    live.update(
+                        Panel(
+                            streamed,
+                            title=f"[bold]Streaming — {model}[/]",
+                            subtitle=f"[dim]{_fmt(time.perf_counter() - t0)}[/]",
+                            border_style="green",
+                        )
+                    )
         t_stream = time.perf_counter() - t0
         timings.append(("Streaming", model, t_stream))
         console.print()
@@ -153,9 +155,15 @@ async def main() -> None:
 
     # ── Cross-provider batch ──────────────────────────────
     batch_requests = [
-        {"model": CLAUDE, "messages": [{"role": "user", "content": "Capital of France? One word."}]},
+        {
+            "model": CLAUDE,
+            "messages": [{"role": "user", "content": "Capital of France? One word."}],
+        },
         {"model": CODEX, "messages": [{"role": "user", "content": "Capital of Japan? One word."}]},
-        {"model": GEMINI, "messages": [{"role": "user", "content": "Capital of Brazil? One word."}]},
+        {
+            "model": GEMINI,
+            "messages": [{"role": "user", "content": "Capital of Brazil? One word."}],
+        },
     ]
 
     t0 = time.perf_counter()

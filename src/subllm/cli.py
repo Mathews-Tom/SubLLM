@@ -36,21 +36,21 @@ def _run_models() -> None:
 
 
 def _run_completion(model: str, prompt: str, stream: bool) -> None:
-    from subllm.router import completion
+    from subllm.router import complete_completion, stream_completion
 
     messages = [{"role": "user", "content": prompt}]
 
-    async def _do():
+    async def _do() -> None:
         if stream:
-            result = await completion(model=model, messages=messages, stream=True)
-            async for chunk in result:
+            stream_result = stream_completion(model=model, messages=messages)
+            async for chunk in stream_result:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     print(delta.content, end="", flush=True)
             print()
         else:
-            result = await completion(model=model, messages=messages)
-            print(result.choices[0].message.content)
+            completion_result = await complete_completion(model=model, messages=messages)
+            print(completion_result.choices[0].message.content)
 
     asyncio.run(_do())
 

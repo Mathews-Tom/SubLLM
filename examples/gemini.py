@@ -35,7 +35,9 @@ async def main() -> None:
     timings.append(("Auth check", PROVIDER, t_auth))
 
     icon = "[green]✓[/]" if status.authenticated else "[red]✗[/]"
-    console.print(f"  {icon} {status.provider}: {status.method or status.error} [dim]({_fmt(t_auth)})[/]")
+    console.print(
+        f"  {icon} {status.provider}: {status.method or status.error} [dim]({_fmt(t_auth)})[/]"
+    )
     if not status.authenticated:
         console.print("[red]Auth failed. Run `gemini` and complete Google login first.[/]")
         return
@@ -60,12 +62,14 @@ async def main() -> None:
     t_single = time.perf_counter() - t0
     timings.append(("Non-streaming", MODEL, t_single))
 
-    console.print(Panel(
-        response.choices[0].message.content,
-        title="[bold]Single-turn (non-streaming)[/]",
-        subtitle=f"[dim]{MODEL} · {_fmt(t_single)}[/]",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            response.choices[0].message.content,
+            title="[bold]Single-turn (non-streaming)[/]",
+            subtitle=f"[dim]{MODEL} · {_fmt(t_single)}[/]",
+            border_style="blue",
+        )
+    )
     console.print()
 
     # ── Single-turn (streaming) ───────────────────────────
@@ -86,12 +90,14 @@ async def main() -> None:
             delta = chunk.choices[0].delta
             if delta.content:
                 streamed.append(delta.content)
-                live.update(Panel(
-                    streamed,
-                    title="[bold]Single-turn (streaming)[/]",
-                    subtitle=f"[dim]{MODEL} · {_fmt(time.perf_counter() - t0)}[/]",
-                    border_style="green",
-                ))
+                live.update(
+                    Panel(
+                        streamed,
+                        title="[bold]Single-turn (streaming)[/]",
+                        subtitle=f"[dim]{MODEL} · {_fmt(time.perf_counter() - t0)}[/]",
+                        border_style="green",
+                    )
+                )
     t_stream = time.perf_counter() - t0
     timings.append(("Streaming", MODEL, t_stream))
     console.print()
@@ -129,7 +135,10 @@ async def main() -> None:
     batch_requests = [
         {"model": MODEL, "messages": [{"role": "user", "content": "Capital of France? One word."}]},
         {"model": MODEL, "messages": [{"role": "user", "content": "Capital of Japan? One word."}]},
-        {"model": MODEL_ALT, "messages": [{"role": "user", "content": "Capital of Brazil? One word."}]},
+        {
+            "model": MODEL_ALT,
+            "messages": [{"role": "user", "content": "Capital of Brazil? One word."}],
+        },
     ]
 
     t0 = time.perf_counter()

@@ -7,10 +7,10 @@ import time
 from collections.abc import AsyncIterator
 
 from subllm.server_api.models import HealthResponse, ModelCard, ModelListResponse, ProviderHealth
-from subllm.types import AuthStatus, ChatCompletionChunk
+from subllm.types import AuthStatus, ChatCompletionChunk, ModelDescriptor
 
 
-def build_model_list(models: list[dict[str, str]]) -> ModelListResponse:
+def build_model_list(models: list[ModelDescriptor]) -> ModelListResponse:
     created = int(time.time())
     return ModelListResponse(
         data=[

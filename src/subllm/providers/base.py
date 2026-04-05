@@ -6,20 +6,26 @@ import abc
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
-from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
+from subllm.types import (
+    AuthStatus,
+    ChatCompletionChunk,
+    ChatCompletionResponse,
+    ProviderMessage,
+)
 
 
-def messages_to_prompt(messages: list[dict], system_prompt: str | None = None) -> str:
+def messages_to_prompt(
+    messages: list[ProviderMessage],
+    system_prompt: str | None = None,
+) -> str:
     """Flatten OpenAI-style messages into a single prompt string for CLI mode."""
     parts: list[str] = []
     if system_prompt:
         parts.append(f"[System: {system_prompt}]")
     for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if role == "system":
-            parts.append(f"[System: {content}]")
-        elif role == "assistant":
+        role = msg["role"]
+        content = msg["content"]
+        if role == "assistant":
             parts.append(f"[Assistant: {content}]")
         else:
             parts.append(content)
@@ -62,13 +68,11 @@ class Provider(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abc.abstractmethod
-    def supported_models(self) -> list[str]:
-        ...
+    def supported_models(self) -> list[str]: ...
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -76,32 +80,29 @@ class Provider(abc.ABC):
         return ProviderCapabilities()
 
     @abc.abstractmethod
-    async def check_auth(self) -> AuthStatus:
-        ...
+    async def check_auth(self) -> AuthStatus: ...
 
     @abc.abstractmethod
     async def complete(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
-    ) -> ChatCompletionResponse:
-        ...
+    ) -> ChatCompletionResponse: ...
 
     @abc.abstractmethod
-    async def stream(
+    def stream(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
-    ) -> AsyncIterator[ChatCompletionChunk]:
-        ...
+    ) -> AsyncIterator[ChatCompletionChunk]: ...
 
     async def close(self) -> None:
         """Release provider resources (persistent connections, subprocesses, etc.).

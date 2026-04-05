@@ -62,16 +62,16 @@ def test_chat_completions_returns_openai_style_error_for_unsupported_fields() ->
 
 
 def test_chat_completions_uses_typed_request_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_completion(self, model, messages, **kwargs):  # type: ignore[no-untyped-def]
-        assert model == "claude-code/sonnet-4-5"
-        assert messages == [{"role": "user", "content": "hello"}]
-        assert kwargs["system_prompt"] == "system message"
+    async def fake_complete_request(self, request):  # type: ignore[no-untyped-def]
+        assert request.model == "claude-code/sonnet-4-5"
+        assert request.provider_messages == [{"role": "user", "content": "hello"}]
+        assert request.effective_system_prompt == "system message"
         return ChatCompletionResponse(
-            model=model,
+            model=request.model,
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],
         )
 
-    monkeypatch.setattr("subllm.server.Router.completion", fake_completion)
+    monkeypatch.setattr("subllm.server_api.app.Router.complete_request", fake_complete_request)
     client = TestClient(create_app())
 
     response = client.post(

@@ -9,14 +9,20 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Mapping, Sequence
 
-from subllm.errors import UnknownModelError
+from subllm.errors import UnknownModelError, UnsupportedFeatureError
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
 from subllm.providers.gemini_cli import GeminiCLIProvider
-from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse, CompletionRequest
+from subllm.types import (
+    AuthStatus,
+    ChatCompletionChunk,
+    ChatCompletionResponse,
+    CompletionRequest,
+    ModelDescriptor,
+)
 
 
 class Router:
@@ -38,12 +44,32 @@ class Router:
     def list_providers(self) -> list[str]:
         return list(self._providers.keys())
 
-    def list_models(self) -> list[dict]:
-        models = []
+    def list_models(self) -> list[ModelDescriptor]:
+        models: list[ModelDescriptor] = []
         for pname, provider in self._providers.items():
             for m in provider.supported_models:
                 models.append({"id": f"{pname}/{m}", "provider": pname})
         return models
+
+    async def complete_request(self, request: CompletionRequest) -> ChatCompletionResponse:
+        provider, model_alias = self._resolve(request.model)
+        return await provider.complete(
+            request.provider_messages,
+            model_alias,
+            system_prompt=request.effective_system_prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+        )
+
+    def stream_request(self, request: CompletionRequest) -> AsyncIterator[ChatCompletionChunk]:
+        provider, model_alias = self._resolve(request.model)
+        return provider.stream(
+            request.provider_messages,
+            model_alias,
+            system_prompt=request.effective_system_prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+        )
 
     def supported_model_ids(self, provider_name: str | None = None) -> list[str]:
         models = self.list_models()
@@ -135,7 +161,7 @@ class Router:
     async def completion(
         self,
         model: str,
-        messages: list[dict[str, Any]],
+        messages: Sequence[Mapping[str, Any]],
         *,
         stream: bool = False,
         system_prompt: str | None = None,
@@ -150,24 +176,10 @@ class Router:
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        provider, model_alias = self._resolve(request.model)
-
         if request.stream:
-            return provider.stream(
-                request.provider_messages,
-                model_alias,
-                system_prompt=request.effective_system_prompt,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-            )
+            return self.stream_request(request)
 
-        return await provider.complete(
-            request.provider_messages,
-            model_alias,
-            system_prompt=request.effective_system_prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
+        return await self.complete_request(request)
 
     async def batch(
         self,
@@ -192,17 +204,12 @@ class Router:
                         if isinstance(req, CompletionRequest)
                         else CompletionRequest.from_mapping(req)
                     )
-                    return await self.completion(
-                        model=request.model,
-                        messages=[
-                            {"role": message.role, "content": message.content}
-                            for message in request.messages
-                        ],
-                        stream=request.stream,
-                        system_prompt=request.system_prompt,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                    )
+                    if request.stream:
+                        raise UnsupportedFeatureError(
+                            field="stream",
+                            message="Batch requests do not support streaming responses",
+                        )
+                    return await self.complete_request(request)
                 except Exception as e:
                     return e
 
@@ -217,7 +224,7 @@ _router = Router()
 
 async def completion(
     model: str,
-    messages: list[dict[str, Any]],
+    messages: Sequence[Mapping[str, Any]],
     *,
     stream: bool = False,
     system_prompt: str | None = None,
@@ -249,6 +256,44 @@ async def completion(
     )
 
 
+async def complete_completion(
+    model: str,
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    system_prompt: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> ChatCompletionResponse:
+    request = CompletionRequest.from_inputs(
+        model=model,
+        messages=messages,
+        stream=False,
+        system_prompt=system_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    return await _router.complete_request(request)
+
+
+def stream_completion(
+    model: str,
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    system_prompt: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> AsyncIterator[ChatCompletionChunk]:
+    request = CompletionRequest.from_inputs(
+        model=model,
+        messages=messages,
+        stream=True,
+        system_prompt=system_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    return _router.stream_request(request)
+
+
 async def batch(
     requests: list[dict[str, Any] | CompletionRequest],
     *,
@@ -266,7 +311,7 @@ async def batch(
     return await _router.batch(requests, concurrency=concurrency)
 
 
-def list_models() -> list[dict]:
+def list_models() -> list[ModelDescriptor]:
     return _router.list_models()
 
 

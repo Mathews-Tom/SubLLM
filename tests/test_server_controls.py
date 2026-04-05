@@ -12,13 +12,13 @@ from subllm.types import ChatCompletionResponse, Choice, Message
 
 
 def test_server_requires_bearer_token_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_completion(self, model, messages, **kwargs):  # type: ignore[no-untyped-def]
+    async def fake_complete_request(self, request):  # type: ignore[no-untyped-def]
         return ChatCompletionResponse(
-            model=model,
+            model=request.model,
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],
         )
 
-    monkeypatch.setattr("subllm.server_api.app.Router.completion", fake_completion)
+    monkeypatch.setattr("subllm.server_api.app.Router.complete_request", fake_complete_request)
     app = create_app(ServerSettings(auth_token="secret"))
     client = TestClient(app)
 
@@ -35,13 +35,13 @@ def test_server_requires_bearer_token_when_configured(monkeypatch: pytest.Monkey
 
 
 def test_server_accepts_valid_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_completion(self, model, messages, **kwargs):  # type: ignore[no-untyped-def]
+    async def fake_complete_request(self, request):  # type: ignore[no-untyped-def]
         return ChatCompletionResponse(
-            model=model,
+            model=request.model,
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],
         )
 
-    monkeypatch.setattr("subllm.server_api.app.Router.completion", fake_completion)
+    monkeypatch.setattr("subllm.server_api.app.Router.complete_request", fake_complete_request)
     app = create_app(ServerSettings(auth_token="secret"))
     client = TestClient(app)
 
@@ -75,13 +75,13 @@ def test_server_rejects_oversized_request_body() -> None:
 
 
 def test_server_rate_limits_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_completion(self, model, messages, **kwargs):  # type: ignore[no-untyped-def]
+    async def fake_complete_request(self, request):  # type: ignore[no-untyped-def]
         return ChatCompletionResponse(
-            model=model,
+            model=request.model,
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],
         )
 
-    monkeypatch.setattr("subllm.server_api.app.Router.completion", fake_completion)
+    monkeypatch.setattr("subllm.server_api.app.Router.complete_request", fake_complete_request)
     app = create_app(ServerSettings(rate_limit_per_minute=1))
     client = TestClient(app)
     payload = {
@@ -100,14 +100,14 @@ def test_server_rate_limits_requests(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_server_request_timeout_returns_structured_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def slow_completion(self, model, messages, **kwargs):  # type: ignore[no-untyped-def]
+    async def slow_complete_request(self, request):  # type: ignore[no-untyped-def]
         await asyncio.sleep(0.05)
         return ChatCompletionResponse(
-            model=model,
+            model=request.model,
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],
         )
 
-    monkeypatch.setattr("subllm.server_api.app.Router.completion", slow_completion)
+    monkeypatch.setattr("subllm.server_api.app.Router.complete_request", slow_complete_request)
     app = create_app(ServerSettings(request_timeout_seconds=0.01))
     client = TestClient(app)
 

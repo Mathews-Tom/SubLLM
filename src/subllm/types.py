@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Mapping, Sequence, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +19,16 @@ class RequestMessage(BaseModel):
 
     role: Literal["system", "user", "assistant"]
     content: str
+
+
+class ProviderMessage(TypedDict):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ModelDescriptor(TypedDict):
+    id: str
+    provider: str
 
 
 class CompletionRequest(BaseModel):
@@ -57,7 +67,7 @@ class CompletionRequest(BaseModel):
         cls,
         *,
         model: str,
-        messages: list[dict[str, Any]],
+        messages: Sequence[Mapping[str, Any]],
         stream: bool = False,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
@@ -66,7 +76,7 @@ class CompletionRequest(BaseModel):
         return cls.from_mapping(
             {
                 "model": model,
-                "messages": messages,
+                "messages": [dict(message) for message in messages],
                 "stream": stream,
                 "system_prompt": system_prompt,
                 "max_tokens": max_tokens,
@@ -83,7 +93,7 @@ class CompletionRequest(BaseModel):
         return "\n\n".join(parts) if parts else None
 
     @property
-    def provider_messages(self) -> list[dict[str, str]]:
+    def provider_messages(self) -> list[ProviderMessage]:
         return [
             {"role": message.role, "content": message.content}
             for message in self.messages
@@ -133,7 +143,7 @@ class ChatCompletionResponse:
     choices: list[Choice] = field(default_factory=list)
     usage: Usage | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "object": self.object,
@@ -167,7 +177,7 @@ class ChatCompletionChunk:
     model: str = ""
     choices: list[StreamChoice] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "object": self.object,

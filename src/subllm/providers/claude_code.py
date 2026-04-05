@@ -25,7 +25,17 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk.types import (
+    AssistantMessage,
+    ResultMessage,
+    StreamEvent,
+    SystemMessage,
+    TextBlock,
+    ThinkingConfigAdaptive,
+    ThinkingConfigDisabled,
+    ThinkingConfigEnabled,
+    UserMessage,
+)
 
 from subllm.errors import ProviderFailureError, ProviderTimeoutError
 from subllm.providers.base import (
@@ -41,6 +51,7 @@ from subllm.types import (
     Choice,
     Delta,
     Message,
+    ProviderMessage,
     StreamChoice,
     Usage,
 )
@@ -58,6 +69,7 @@ EffortLevel = Literal["low", "medium", "high", "max"]
 
 # SDK thinking modes
 ThinkingMode = Literal["adaptive", "enabled", "disabled"]
+ClaudeResponseEvent = AssistantMessage | ResultMessage | UserMessage | SystemMessage | StreamEvent
 
 
 @dataclass(frozen=True)
@@ -235,13 +247,18 @@ class ClaudeCodeProvider(Provider):
         resolved = self.resolve_model(model)
 
         # Build thinking config based on provider settings
-        thinking_config: dict[str, Any] | None = None
+        thinking_config: (
+            ThinkingConfigAdaptive | ThinkingConfigEnabled | ThinkingConfigDisabled | None
+        ) = None
         if self._thinking == "adaptive":
-            thinking_config = {"type": "adaptive"}
+            thinking_config = ThinkingConfigAdaptive(type="adaptive")
         elif self._thinking == "enabled":
-            thinking_config = {"type": "enabled", "budget_tokens": self._thinking_budget or 10_000}
+            thinking_config = ThinkingConfigEnabled(
+                type="enabled",
+                budget_tokens=self._thinking_budget or 10_000,
+            )
         elif self._thinking == "disabled":
-            thinking_config = {"type": "disabled"}
+            thinking_config = ThinkingConfigDisabled(type="disabled")
 
         # Merge env overrides with CLAUDECODE unset to prevent nested-session errors.
         # The SDK's env param is additive to os.environ, so we must explicitly blank it.
@@ -304,7 +321,7 @@ class ClaudeCodeProvider(Provider):
 
     async def complete(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
@@ -325,8 +342,8 @@ class ClaudeCodeProvider(Provider):
 
     async def _next_response(
         self,
-        response_stream: AsyncIterator[AssistantMessage | ResultMessage],
-    ) -> AssistantMessage | ResultMessage | None:
+        response_stream: AsyncIterator[ClaudeResponseEvent],
+    ) -> ClaudeResponseEvent | None:
         try:
             return await asyncio.wait_for(anext(response_stream), timeout=self._stream_idle_timeout)
         except StopAsyncIteration:
@@ -340,7 +357,7 @@ class ClaudeCodeProvider(Provider):
 
     async def _complete(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
@@ -400,7 +417,7 @@ class ClaudeCodeProvider(Provider):
 
     async def stream(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
@@ -412,7 +429,7 @@ class ClaudeCodeProvider(Provider):
 
     async def _stream_impl(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,

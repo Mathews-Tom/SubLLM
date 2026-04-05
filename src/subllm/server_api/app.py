@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.responses import Response
 
 from subllm.router import Router
 from subllm.server_api.errors import install_exception_handlers
@@ -15,6 +16,7 @@ from subllm.server_api.responses import (
     sse_chat_completion_stream,
 )
 from subllm.server_api.settings import ServerSettings
+from subllm.types import ChatCompletionResponse
 
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
@@ -30,33 +32,22 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         payload = build_model_list(router.list_models())
         return JSONResponse(payload.model_dump())
 
-    @app.post("/v1/chat/completions")
-    async def chat_completions(request: Request):
+    @app.post("/v1/chat/completions", response_model=None)
+    async def chat_completions(request: Request) -> Response:
         completion_request = await parse_chat_completion_request(request)
 
         if completion_request.stream:
-            result = await router.completion(
-                model=completion_request.model,
-                messages=completion_request.provider_messages,
-                stream=True,
-                system_prompt=completion_request.effective_system_prompt,
-                max_tokens=completion_request.max_tokens,
-                temperature=completion_request.temperature,
-            )
+            stream_result = router.stream_request(completion_request)
             return StreamingResponse(
-                sse_chat_completion_stream(result),
+                sse_chat_completion_stream(stream_result),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
-        result = await router.completion(
-            model=completion_request.model,
-            messages=completion_request.provider_messages,
-            system_prompt=completion_request.effective_system_prompt,
-            max_tokens=completion_request.max_tokens,
-            temperature=completion_request.temperature,
+        completion_result: ChatCompletionResponse = await router.complete_request(
+            completion_request
         )
-        return JSONResponse(result.to_dict())
+        return JSONResponse(completion_result.to_dict())
 
     @app.get("/health")
     async def health() -> JSONResponse:
