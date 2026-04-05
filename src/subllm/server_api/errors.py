@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from subllm.errors import MalformedRequestError, SubLLMError
 from subllm.server_api.models import ErrorBody, ErrorResponse
+from subllm.telemetry import response_context_headers
 
 RequestHandler = Callable[[Request, Exception], JSONResponse | Awaitable[JSONResponse]]
 
@@ -28,7 +29,11 @@ def build_error_response(exc: SubLLMError) -> ErrorResponse:
 
 async def handle_subllm_error(_request: Request, exc: SubLLMError) -> JSONResponse:
     response = build_error_response(exc)
-    return JSONResponse(status_code=exc.status_code, content=response.model_dump())
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=response.model_dump(),
+        headers=response_context_headers(),
+    )
 
 
 async def handle_request_validation_error(
@@ -37,7 +42,11 @@ async def handle_request_validation_error(
 ) -> JSONResponse:
     error = MalformedRequestError.from_validation_error(exc)
     response = build_error_response(error)
-    return JSONResponse(status_code=error.status_code, content=response.model_dump())
+    return JSONResponse(
+        status_code=error.status_code,
+        content=response.model_dump(),
+        headers=response_context_headers(),
+    )
 
 
 async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
@@ -48,7 +57,11 @@ async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResp
         status_code=500,
     )
     response = build_error_response(error)
-    return JSONResponse(status_code=error.status_code, content=response.model_dump())
+    return JSONResponse(
+        status_code=error.status_code,
+        content=response.model_dump(),
+        headers=response_context_headers(),
+    )
 
 
 def install_exception_handlers(app: FastAPI) -> None:
