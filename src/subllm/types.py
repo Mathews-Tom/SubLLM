@@ -26,6 +26,16 @@ class ProviderMessage(TypedDict):
     content: str
 
 
+class PromptReference(BaseModel):
+    """Reference to a registered prompt version."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    name: str = Field(min_length=1)
+    version: str | None = Field(default=None, min_length=1)
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
 class ModelDescriptor(TypedDict):
     id: str
     provider: str
@@ -37,7 +47,7 @@ class CompletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     supported_fields: ClassVar[frozenset[str]] = frozenset(
-        {"model", "messages", "stream", "system_prompt", "max_tokens", "temperature"}
+        {"model", "messages", "stream", "system_prompt", "max_tokens", "temperature", "prompt"}
     )
 
     model: str = Field(min_length=1)
@@ -46,6 +56,7 @@ class CompletionRequest(BaseModel):
     system_prompt: str | None = None
     max_tokens: int | None = Field(default=None, ge=1)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    prompt: PromptReference | None = None
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> CompletionRequest:
@@ -72,6 +83,7 @@ class CompletionRequest(BaseModel):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        prompt: Mapping[str, Any] | None = None,
     ) -> CompletionRequest:
         return cls.from_mapping(
             {
@@ -81,6 +93,7 @@ class CompletionRequest(BaseModel):
                 "system_prompt": system_prompt,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
+                "prompt": dict(prompt) if prompt is not None else None,
             }
         )
 
@@ -90,6 +103,14 @@ class CompletionRequest(BaseModel):
         if self.system_prompt:
             parts.append(self.system_prompt)
         parts.extend(message.content for message in self.messages if message.role == "system")
+        return "\n\n".join(parts) if parts else None
+
+    def compose_system_prompt(self, prompt_text: str | None = None) -> str | None:
+        parts: list[str] = []
+        if prompt_text:
+            parts.append(prompt_text)
+        if self.effective_system_prompt:
+            parts.append(self.effective_system_prompt)
         return "\n\n".join(parts) if parts else None
 
     @property

@@ -89,6 +89,33 @@ class UnknownModelError(SubLLMError):
         )
 
 
+class UnknownPromptError(SubLLMError):
+    """Raised when a request references an unknown prompt or version."""
+
+    def __init__(self, *, prompt_name: str, detail: str | None = None) -> None:
+        message = detail or f"Unknown prompt '{prompt_name}'"
+        super().__init__(
+            message,
+            code="prompt_not_found",
+            error_type="invalid_request_error",
+            status_code=400,
+            param="prompt",
+        )
+
+
+class PromptRenderError(SubLLMError):
+    """Raised when prompt variables do not match the registered template."""
+
+    def __init__(self, *, message: str) -> None:
+        super().__init__(
+            message,
+            code="prompt_render_error",
+            error_type="invalid_request_error",
+            status_code=400,
+            param="prompt",
+        )
+
+
 class ProviderFailureError(SubLLMError):
     """Raised when a provider process or SDK session fails."""
 
