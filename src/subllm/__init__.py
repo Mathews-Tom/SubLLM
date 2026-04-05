@@ -1,6 +1,7 @@
-"""SubLLM — Route LLM API calls through subscription-authenticated coding agents.
+"""SubLLM — Experimental personal-use gateway for CLI-backed LLM access.
 
-Supports Claude Code, OpenAI Codex, and Gemini CLI as backends.
+Evaluates Claude Code, OpenAI Codex, and Gemini CLI as backends behind a narrow
+OpenAI-compatible subset. Intended for personal use and small internal evaluation.
 
 Usage:
     import subllm
@@ -100,7 +101,7 @@ from subllm.types import (
     TextContentPart,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "Provider",

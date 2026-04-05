@@ -91,7 +91,7 @@ def configure_telemetry(config: TelemetryConfig | None) -> None:
         _runtime.shutdown()
 
     provider = TracerProvider(
-        resource=Resource.create({"service.name": config.service_name, "service.version": "0.4.0"})
+        resource=Resource.create({"service.name": config.service_name, "service.version": "0.5.0"})
     )
     exporter = JsonLineSpanExporter(config.export_path)
     processor = SimpleSpanProcessor(exporter)
