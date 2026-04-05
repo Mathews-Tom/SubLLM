@@ -18,6 +18,7 @@ from subllm.model_registry import (
     provider_model_aliases,
     registered_provider_names,
 )
+from subllm.prompts import PromptRegistry, ResolvedPrompt, get_prompt_registry
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
@@ -40,11 +41,17 @@ from subllm.types import (
 class Router:
     """Routes model requests to the correct provider based on model prefix."""
 
-    def __init__(self, *, auth_cache_ttl: float = 300.0) -> None:
+    def __init__(
+        self,
+        *,
+        auth_cache_ttl: float = 300.0,
+        prompt_registry: PromptRegistry | None = None,
+    ) -> None:
         self._providers: dict[str, Provider] = {}
         self._auth_cache: list[AuthStatus] | None = None
         self._auth_cache_time: float = 0.0
         self._auth_cache_ttl: float = auth_cache_ttl
+        self._prompt_registry = prompt_registry or get_prompt_registry()
         self.register(ClaudeCodeProvider())
         self.register(CodexProvider())
         self.register(GeminiCLIProvider())
@@ -68,6 +75,10 @@ class Router:
 
     async def complete_request(self, request: CompletionRequest) -> ChatCompletionResponse:
         provider, model_alias = self._resolve(request.model)
+        resolved_prompt = self._resolve_prompt(request)
+        system_prompt = request.compose_system_prompt(
+            resolved_prompt.text if resolved_prompt is not None else None
+        )
         started = time.perf_counter()
         with get_tracer("subllm.router").start_as_current_span("subllm.completion") as span:
             attach_request_context(span)
@@ -75,11 +86,12 @@ class Router:
             span.set_attribute("gen_ai.request.model", request.model)
             span.set_attribute("subllm.model_alias", model_alias)
             span.set_attribute("subllm.request.stream", False)
+            self._attach_prompt_attributes(span, resolved_prompt)
             try:
                 response = await provider.complete(
                     request.provider_messages,
                     model_alias,
-                    system_prompt=request.effective_system_prompt,
+                    system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                 )
@@ -111,6 +123,10 @@ class Router:
         model_alias: str,
         request: CompletionRequest,
     ) -> AsyncIterator[ChatCompletionChunk]:
+        resolved_prompt = self._resolve_prompt(request)
+        system_prompt = request.compose_system_prompt(
+            resolved_prompt.text if resolved_prompt is not None else None
+        )
         started = time.perf_counter()
         chunk_count = 0
         with get_tracer("subllm.router").start_as_current_span("subllm.stream") as span:
@@ -119,11 +135,12 @@ class Router:
             span.set_attribute("gen_ai.request.model", request.model)
             span.set_attribute("subllm.model_alias", model_alias)
             span.set_attribute("subllm.request.stream", True)
+            self._attach_prompt_attributes(span, resolved_prompt)
             try:
                 async for chunk in provider.stream(
                     request.provider_messages,
                     model_alias,
-                    system_prompt=request.effective_system_prompt,
+                    system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                 ):
@@ -236,6 +253,25 @@ class Router:
 
         return provider, model_alias
 
+    def _resolve_prompt(self, request: CompletionRequest) -> ResolvedPrompt | None:
+        if request.prompt is None:
+            return None
+        return self._prompt_registry.resolve(
+            name=request.prompt.name,
+            version=request.prompt.version,
+            variables=request.prompt.variables,
+        )
+
+    def _attach_prompt_attributes(
+        self,
+        span: Any,
+        resolved_prompt: ResolvedPrompt | None,
+    ) -> None:
+        if resolved_prompt is None:
+            return
+        span.set_attribute("subllm.prompt.name", resolved_prompt.name)
+        span.set_attribute("subllm.prompt.version", resolved_prompt.version)
+
     async def completion(
         self,
         model: str,
@@ -245,6 +281,7 @@ class Router:
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        prompt: Mapping[str, Any] | None = None,
     ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
         request = CompletionRequest.from_inputs(
             model=model,
@@ -253,6 +290,7 @@ class Router:
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            prompt=prompt,
         )
         if request.stream:
             return self.stream_request(request)
@@ -308,6 +346,7 @@ async def completion(
     system_prompt: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    prompt: Mapping[str, Any] | None = None,
 ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
     """OpenAI-compatible completion function.
 
@@ -331,6 +370,7 @@ async def completion(
         system_prompt=system_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        prompt=prompt,
     )
 
 
@@ -341,6 +381,7 @@ async def complete_completion(
     system_prompt: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    prompt: Mapping[str, Any] | None = None,
 ) -> ChatCompletionResponse:
     request = CompletionRequest.from_inputs(
         model=model,
@@ -349,6 +390,7 @@ async def complete_completion(
         system_prompt=system_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        prompt=prompt,
     )
     return await _router.complete_request(request)
 
@@ -360,6 +402,7 @@ def stream_completion(
     system_prompt: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    prompt: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[ChatCompletionChunk]:
     request = CompletionRequest.from_inputs(
         model=model,
@@ -368,6 +411,7 @@ def stream_completion(
         system_prompt=system_prompt,
         max_tokens=max_tokens,
         temperature=temperature,
+        prompt=prompt,
     )
     return _router.stream_request(request)
 

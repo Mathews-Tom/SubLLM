@@ -33,6 +33,7 @@ from __future__ import annotations
 from subllm.errors import (
     AuthenticationError,
     MalformedRequestError,
+    PromptRenderError,
     ProviderFailureError,
     ProviderTimeoutError,
     RateLimitExceededError,
@@ -40,6 +41,7 @@ from subllm.errors import (
     RequestTooLargeError,
     SubLLMError,
     UnknownModelError,
+    UnknownPromptError,
     UnsupportedFeatureError,
 )
 from subllm.evals import (
@@ -60,6 +62,14 @@ from subllm.model_registry import (
     provider_registry_entry,
     registered_provider_names,
 )
+from subllm.prompts import (
+    PromptRegistry,
+    RegisteredPrompt,
+    ResolvedPrompt,
+    get_prompt_registry,
+    list_registered_prompts,
+    resolve_prompt,
+)
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.router import (
     Router,
@@ -76,6 +86,7 @@ from subllm.types import (
     ChatCompletionChunk,
     ChatCompletionResponse,
     CompletionRequest,
+    PromptReference,
     RequestMessage,
 )
 
@@ -84,6 +95,9 @@ __version__ = "0.4.0"
 __all__ = [
     "Provider",
     "ProviderCapabilities",
+    "PromptRegistry",
+    "RegisteredPrompt",
+    "ResolvedPrompt",
     "ContractCase",
     "ContractResult",
     "ContractSuiteResult",
@@ -97,13 +111,16 @@ __all__ = [
     "all_model_descriptors",
     "all_model_entries",
     "get_router",
+    "get_prompt_registry",
     "load_contract_cases",
     "list_models",
+    "list_registered_prompts",
     "provider_capabilities",
     "provider_model_aliases",
     "provider_model_entries",
     "provider_registry_entry",
     "registered_provider_names",
+    "resolve_prompt",
     "run_contract_case",
     "run_contract_suite",
     "AuthStatus",
@@ -112,6 +129,8 @@ __all__ = [
     "CompletionRequest",
     "AuthenticationError",
     "MalformedRequestError",
+    "PromptReference",
+    "PromptRenderError",
     "ProviderFailureError",
     "ProviderTimeoutError",
     "RateLimitExceededError",
@@ -120,5 +139,6 @@ __all__ = [
     "RequestTooLargeError",
     "SubLLMError",
     "UnknownModelError",
+    "UnknownPromptError",
     "UnsupportedFeatureError",
 ]

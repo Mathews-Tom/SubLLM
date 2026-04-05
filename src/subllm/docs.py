@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from subllm.model_registry import _PROVIDERS
+from subllm.prompts import list_registered_prompts
 from subllm.types import CompletionRequest
 
 README_PATH = Path(__file__).resolve().parents[2] / "README.md"
@@ -50,6 +51,10 @@ def render_readme_managed_section() -> str:
         "- Supported message roles: `system`, `user`, `assistant`",
         "- Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`",
         (
+            "- Registered prompt references are accepted through the `prompt` field and "
+            "resolve to versioned system prompt text before provider dispatch."
+        ),
+        (
             "- Unsupported chat-completions fields are rejected explicitly. "
             f"Common examples: {unsupported_fields}"
         ),
@@ -65,6 +70,21 @@ def render_readme_managed_section() -> str:
                 f"| `{model.id}` | {model.backend_name} via `{provider.backend}` | "
                 f"{model.auth_description} |"
             )
+    lines.extend(
+        [
+            "",
+            "## Prompt Registry",
+            "",
+            "| Prompt | Version | Variables | Description |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for prompt in list_registered_prompts():
+        variables = ", ".join(f"`{name}`" for name in prompt.variables) or "none"
+        lines.append(
+            f"| `{prompt.name}` | `{prompt.version}` | {variables} | "
+            f"{prompt.description or 'No description'} |"
+        )
     lines.extend(
         [
             "",
