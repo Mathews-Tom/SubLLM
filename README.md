@@ -122,19 +122,38 @@ response = client.chat.completions.create(
 )
 ```
 
+<!-- BEGIN GENERATED SECTION: registry-docs -->
+## Supported Chat Completions Subset
+
+SubLLM implements a strict subset of the OpenAI chat completions contract.
+
+- Accepted request fields: `max_tokens`, `messages`, `model`, `stream`, `system_prompt`, `temperature`
+- Supported message roles: `system`, `user`, `assistant`
+- Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`
+- Unsupported chat-completions fields are rejected explicitly. Common examples: `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, `logprobs`, `top_logprobs`, `n`, `metadata`, `modalities`, `audio`, `store`, `user`, `reasoning`
+
 ## Available Models
 
-| Model ID                        | Backend                | Auth                              |
-| ------------------------------- | ---------------------- | --------------------------------- |
-| `claude-code/opus-4-6`          | Claude Opus 4.6        | Claude Max ($200)                 |
-| `claude-code/sonnet-4-5`        | Claude Sonnet 4.5      | Claude Pro ($20) / Max ($100-200) |
-| `claude-code/haiku-4-5`         | Claude Haiku 4.5       | Claude Pro ($20) / Max ($100-200) |
-| `codex/gpt-5.2`                 | GPT-5.2                | ChatGPT Plus ($20) / Pro ($200)   |
-| `codex/gpt-5.2-codex`           | GPT-5.2-Codex          | ChatGPT Plus ($20) / Pro ($200)   |
-| `codex/gpt-4.1`                 | GPT-4.1                | ChatGPT Plus ($20) / Pro ($200)   |
-| `codex/gpt-5-mini`              | GPT-5 Mini             | ChatGPT Plus ($20) / Pro ($200)   |
-| `gemini/gemini-3-pro-preview`   | Gemini 3 Pro Preview   | API key / AI Pro / AI Ultra       |
-| `gemini/gemini-3-flash-preview` | Gemini 3 Flash Preview | API key / AI Pro / AI Ultra       |
+| Model ID | Backend | Auth |
+| --- | --- | --- |
+| `claude-code/opus-4-6` | Claude Opus 4.6 via `claude-agent-sdk` | Claude Max ($200) or Anthropic API key |
+| `claude-code/sonnet-4-5` | Claude Sonnet 4.5 via `claude-agent-sdk` | Claude Pro ($20) / Max ($100-200) or Anthropic API key |
+| `claude-code/haiku-4-5` | Claude Haiku 4.5 via `claude-agent-sdk` | Claude Pro ($20) / Max ($100-200) or Anthropic API key |
+| `codex/gpt-5.2` | GPT-5.2 via `codex exec` | ChatGPT Plus ($20) / Pro ($200) or OPENAI_API_KEY |
+| `codex/gpt-5.2-codex` | GPT-5.2-Codex via `codex exec` | ChatGPT Plus ($20) / Pro ($200) or OPENAI_API_KEY |
+| `codex/gpt-4.1` | GPT-4.1 via `codex exec` | ChatGPT Plus ($20) / Pro ($200) or OPENAI_API_KEY |
+| `codex/gpt-5-mini` | GPT-5 Mini via `codex exec` | ChatGPT Plus ($20) / Pro ($200) or OPENAI_API_KEY |
+| `gemini/gemini-3-pro-preview` | Gemini 3 Pro Preview via `gemini -p` | GEMINI_API_KEY, GOOGLE_API_KEY, Google AI Pro, or Google AI Ultra |
+| `gemini/gemini-3-flash-preview` | Gemini 3 Flash Preview via `gemini -p` | GEMINI_API_KEY, GOOGLE_API_KEY, Google AI Pro, or Google AI Ultra |
+
+## Provider Capabilities
+
+| Provider | Streaming | Sessions | System Prompt | Vision | Context Window | Auth Modes | Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| claude-code | yes | yes | yes | yes | 200,000 | subscription, api_key | `claude-agent-sdk` |
+| codex | yes | yes | yes | no | 200,000 | subscription, api_key | `codex exec` |
+| gemini | yes | no | yes | yes | 1,000,000 | subscription, api_key | `gemini -p` |
+<!-- END GENERATED SECTION: registry-docs -->
 
 ## Architecture
 
