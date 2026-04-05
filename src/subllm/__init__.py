@@ -33,6 +33,7 @@ from __future__ import annotations
 from subllm.cache import CacheConfig, ResponseCache
 from subllm.errors import (
     AuthenticationError,
+    InvalidAttachmentError,
     MalformedRequestError,
     PromptRenderError,
     ProviderFailureError,
@@ -87,8 +88,14 @@ from subllm.types import (
     ChatCompletionChunk,
     ChatCompletionResponse,
     CompletionRequest,
+    FileContentPart,
+    ImageContentPart,
+    ImageUrlSpec,
+    MessageContentPart,
     PromptReference,
     RequestMessage,
+    ResolvedImageInput,
+    TextContentPart,
 )
 
 __version__ = "0.4.0"
@@ -131,6 +138,11 @@ __all__ = [
     "ChatCompletionResponse",
     "CompletionRequest",
     "AuthenticationError",
+    "FileContentPart",
+    "ImageContentPart",
+    "ImageUrlSpec",
+    "InvalidAttachmentError",
+    "MessageContentPart",
     "MalformedRequestError",
     "PromptReference",
     "PromptRenderError",
@@ -138,9 +150,11 @@ __all__ = [
     "ProviderTimeoutError",
     "RateLimitExceededError",
     "RequestMessage",
+    "ResolvedImageInput",
     "RequestTimeoutError",
     "RequestTooLargeError",
     "SubLLMError",
+    "TextContentPart",
     "UnknownModelError",
     "UnknownPromptError",
     "UnsupportedFeatureError",

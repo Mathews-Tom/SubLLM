@@ -11,7 +11,9 @@ import asyncio
 import json
 import os
 import shutil
+import tempfile
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from subllm.errors import ProviderFailureError, ProviderTimeoutError
 from subllm.model_registry import (
@@ -33,6 +35,7 @@ from subllm.types import (
     Delta,
     Message,
     ProviderMessage,
+    ResolvedImageInput,
     StreamChoice,
     Usage,
 )
@@ -70,9 +73,18 @@ class CodexProvider(Provider):
         resolved = resolve_provider_model(self.name, model_alias)
         return resolved or model_alias
 
-    def _build_cli_args(self, prompt: str, model: str) -> list[str]:
+    def _build_cli_args(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        image_paths: list[str] | None = None,
+    ) -> list[str]:
         resolved = self.resolve_model(model)
-        return [self._cli_path, "exec", prompt, "--model", resolved, "--json"]
+        args = [self._cli_path, "exec", prompt, "--model", resolved, "--json"]
+        for image_path in image_paths or []:
+            args.extend(["--image", image_path])
+        return args
 
     async def _terminate_process(self, proc: asyncio.subprocess.Process) -> None:
         if proc.returncode is not None:
@@ -87,6 +99,46 @@ class CodexProvider(Provider):
         if proc.stderr is None:
             return ""
         return (await proc.stderr.read()).decode().strip()
+
+    @asynccontextmanager
+    async def _prepared_image_paths(
+        self,
+        messages: list[ProviderMessage],
+    ) -> AsyncIterator[list[str]]:
+        image_paths: list[str] = []
+        temp_paths: list[str] = []
+        try:
+            for message in messages:
+                for image in message.get("images", []):
+                    image_path = self._prepare_image_path(image, temp_paths)
+                    image_paths.append(image_path)
+            yield image_paths
+        finally:
+            for temp_path in temp_paths:
+                try:
+                    os.remove(temp_path)
+                except FileNotFoundError:
+                    continue
+
+    def _prepare_image_path(
+        self,
+        image: ResolvedImageInput,
+        temp_paths: list[str],
+    ) -> str:
+        if image.file_path is not None:
+            return image.file_path
+
+        if image.data is None:
+            raise ProviderFailureError(
+                provider=self.name,
+                message=f"Image '{image.filename}' is missing payload data",
+            )
+
+        suffix = _suffix_for_media_type(image.media_type)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+            handle.write(image.data)
+            temp_paths.append(handle.name)
+            return handle.name
 
     async def check_auth(self) -> AuthStatus:
         if os.environ.get("OPENAI_API_KEY"):
@@ -131,31 +183,32 @@ class CodexProvider(Provider):
         temperature: float | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
-        args = self._build_cli_args(prompt, model)
+        async with self._prepared_image_paths(messages) as image_paths:
+            args = self._build_cli_args(prompt, model, image_paths=image_paths)
 
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=self._command_timeout,
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except asyncio.TimeoutError as exc:
-            await self._terminate_process(proc)
-            raise ProviderTimeoutError(
-                provider=self.name,
-                operation="completion",
-                timeout_seconds=self._command_timeout,
-            ) from exc
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._command_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                await self._terminate_process(proc)
+                raise ProviderTimeoutError(
+                    provider=self.name,
+                    operation="completion",
+                    timeout_seconds=self._command_timeout,
+                ) from exc
 
-        if proc.returncode != 0:
-            raise ProviderFailureError(
-                provider=self.name,
-                message=f"Codex CLI failed (exit {proc.returncode}): {stderr.decode().strip()}",
-            )
+            if proc.returncode != 0:
+                raise ProviderFailureError(
+                    provider=self.name,
+                    message=f"Codex CLI failed (exit {proc.returncode}): {stderr.decode().strip()}",
+                )
 
         content_parts: list[str] = []
         usage = None
@@ -203,86 +256,96 @@ class CodexProvider(Provider):
         temperature: float | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
-        args = self._build_cli_args(prompt, model)
+        async with self._prepared_image_paths(messages) as image_paths:
+            args = self._build_cli_args(prompt, model, image_paths=image_paths)
 
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-        chunk_id = f"chatcmpl-codex-{id(proc)}"
-        first = True
-        stream_error: str | None = None
+            chunk_id = f"chatcmpl-codex-{id(proc)}"
+            first = True
+            stream_error: str | None = None
 
-        assert proc.stdout is not None
-        while True:
+            assert proc.stdout is not None
+            while True:
+                try:
+                    line_bytes = await asyncio.wait_for(
+                        proc.stdout.readline(),
+                        timeout=self._stream_idle_timeout,
+                    )
+                except asyncio.TimeoutError as exc:
+                    await self._terminate_process(proc)
+                    raise ProviderTimeoutError(
+                        provider=self.name,
+                        operation="stream",
+                        timeout_seconds=self._stream_idle_timeout,
+                    ) from exc
+
+                if not line_bytes:
+                    break
+                line = line_bytes.decode().strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    if event.get("type") == "item.completed":
+                        item = event.get("item", {})
+                        if item.get("type") == "agent_message":
+                            text = item.get("text", "")
+                            if text:
+                                yield ChatCompletionChunk(
+                                    id=chunk_id,
+                                    model=f"codex/{model}",
+                                    choices=[
+                                        StreamChoice(
+                                            delta=Delta(
+                                                role="assistant" if first else None,
+                                                content=text,
+                                            )
+                                        )
+                                    ],
+                                )
+                                first = False
+                    elif event.get("type") == "error":
+                        stream_error = f"Codex error: {event.get('message', 'unknown')}"
+                        break
+                except json.JSONDecodeError:
+                    continue
+
             try:
-                line_bytes = await asyncio.wait_for(
-                    proc.stdout.readline(),
-                    timeout=self._stream_idle_timeout,
-                )
+                await asyncio.wait_for(proc.wait(), timeout=self._command_timeout)
             except asyncio.TimeoutError as exc:
                 await self._terminate_process(proc)
                 raise ProviderTimeoutError(
                     provider=self.name,
-                    operation="stream",
-                    timeout_seconds=self._stream_idle_timeout,
+                    operation="stream shutdown",
+                    timeout_seconds=self._command_timeout,
                 ) from exc
 
-            if not line_bytes:
-                break
-            line = line_bytes.decode().strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-                if event.get("type") == "item.completed":
-                    item = event.get("item", {})
-                    if item.get("type") == "agent_message":
-                        text = item.get("text", "")
-                        if text:
-                            yield ChatCompletionChunk(
-                                id=chunk_id,
-                                model=f"codex/{model}",
-                                choices=[
-                                    StreamChoice(
-                                        delta=Delta(
-                                            role="assistant" if first else None,
-                                            content=text,
-                                        )
-                                    )
-                                ],
-                            )
-                            first = False
-                elif event.get("type") == "error":
-                    stream_error = f"Codex error: {event.get('message', 'unknown')}"
-                    break
-            except json.JSONDecodeError:
-                continue
+            stderr_text = await self._read_stderr(proc)
+            if stream_error is not None:
+                details = f"{stream_error}. {stderr_text}".strip().rstrip(".")
+                raise ProviderFailureError(provider=self.name, message=details)
+            if proc.returncode != 0:
+                raise ProviderFailureError(
+                    provider=self.name,
+                    message=f"Codex CLI failed (exit {proc.returncode}): {stderr_text}",
+                )
 
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=self._command_timeout)
-        except asyncio.TimeoutError as exc:
-            await self._terminate_process(proc)
-            raise ProviderTimeoutError(
-                provider=self.name,
-                operation="stream shutdown",
-                timeout_seconds=self._command_timeout,
-            ) from exc
-
-        stderr_text = await self._read_stderr(proc)
-        if stream_error is not None:
-            details = f"{stream_error}. {stderr_text}".strip().rstrip(".")
-            raise ProviderFailureError(provider=self.name, message=details)
-        if proc.returncode != 0:
-            raise ProviderFailureError(
-                provider=self.name,
-                message=f"Codex CLI failed (exit {proc.returncode}): {stderr_text}",
+            yield ChatCompletionChunk(
+                id=chunk_id,
+                model=f"codex/{model}",
+                choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
             )
 
-        yield ChatCompletionChunk(
-            id=chunk_id,
-            model=f"codex/{model}",
-            choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
-        )
+
+def _suffix_for_media_type(media_type: str) -> str:
+    return {
+        "image/gif": ".gif",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }.get(media_type, ".bin")

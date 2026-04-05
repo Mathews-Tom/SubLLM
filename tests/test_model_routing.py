@@ -86,7 +86,7 @@ async def test_router_exposes_explicit_complete_and_stream_paths(
     router = Router()
 
     async def fake_complete(self, messages, model, **kwargs):  # type: ignore[no-untyped-def]
-        assert messages == [{"role": "user", "content": "hello"}]
+        assert messages == [{"role": "user", "content": "hello", "images": []}]
         assert kwargs["system_prompt"] == "system"
         return ChatCompletionResponse(
             model=f"codex/{model}",
@@ -94,7 +94,7 @@ async def test_router_exposes_explicit_complete_and_stream_paths(
         )
 
     async def fake_stream(self, messages, model, **kwargs):  # type: ignore[no-untyped-def]
-        assert messages == [{"role": "user", "content": "hello"}]
+        assert messages == [{"role": "user", "content": "hello", "images": []}]
         assert kwargs["system_prompt"] == "system"
         yield ChatCompletionChunk(
             model=f"codex/{model}",

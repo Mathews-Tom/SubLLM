@@ -116,6 +116,19 @@ class PromptRenderError(SubLLMError):
         )
 
 
+class InvalidAttachmentError(SubLLMError):
+    """Raised when a message attachment cannot be validated or normalized."""
+
+    def __init__(self, *, message: str) -> None:
+        super().__init__(
+            message,
+            code="invalid_attachment",
+            error_type="invalid_request_error",
+            status_code=400,
+            param="messages",
+        )
+
+
 class ProviderFailureError(SubLLMError):
     """Raised when a provider process or SDK session fails."""
 

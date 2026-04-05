@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, Mapping, Sequence, TypedDict
+from typing import Annotated, Any, ClassVar, Literal, Mapping, Sequence, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import NotRequired
 
 from subllm.errors import MalformedRequestError, UnsupportedFeatureError
 
@@ -18,12 +19,54 @@ class RequestMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str | list[MessageContentPart]
+
+
+class TextContentPart(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    type: Literal["text"]
+    text: str
+
+
+class ImageUrlSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    url: str = Field(min_length=1)
+
+
+class ImageContentPart(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    type: Literal["image_url"]
+    image_url: ImageUrlSpec
+
+
+class FileContentPart(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    type: Literal["input_file"]
+    file_path: str = Field(min_length=1)
+
+
+MessageContentPart = Annotated[
+    TextContentPart | ImageContentPart | FileContentPart,
+    Field(discriminator="type"),
+]
+
+
+@dataclass(frozen=True)
+class ResolvedImageInput:
+    filename: str
+    media_type: str
+    file_path: str | None = None
+    data: bytes | None = None
 
 
 class ProviderMessage(TypedDict):
-    role: Literal["user", "assistant"]
+    role: Literal["system", "user", "assistant"]
     content: str
+    images: NotRequired[list[ResolvedImageInput]]
 
 
 class PromptReference(BaseModel):
@@ -99,10 +142,16 @@ class CompletionRequest(BaseModel):
 
     @property
     def effective_system_prompt(self) -> str | None:
+        from subllm.attachments import provider_message_from_request_message
+
         parts: list[str] = []
         if self.system_prompt:
             parts.append(self.system_prompt)
-        parts.extend(message.content for message in self.messages if message.role == "system")
+        parts.extend(
+            provider_message_from_request_message(message)["content"]
+            for message in self.messages
+            if message.role == "system"
+        )
         return "\n\n".join(parts) if parts else None
 
     def compose_system_prompt(self, prompt_text: str | None = None) -> str | None:
@@ -115,8 +164,10 @@ class CompletionRequest(BaseModel):
 
     @property
     def provider_messages(self) -> list[ProviderMessage]:
+        from subllm.attachments import provider_message_from_request_message
+
         return [
-            {"role": message.role, "content": message.content}
+            provider_message_from_request_message(message)
             for message in self.messages
             if message.role != "system"
         ]

@@ -65,7 +65,7 @@ async def test_router_composes_registered_prompt_with_request_system_prompt(
     router = Router()
 
     async def fake_complete(self, messages, model, **kwargs):  # type: ignore[no-untyped-def]
-        assert messages == [{"role": "user", "content": "hello"}]
+        assert messages == [{"role": "user", "content": "hello", "images": []}]
         assert kwargs["system_prompt"] is not None
         assert "You are a precise, direct assistant." in kwargs["system_prompt"]
         assert "extra system prompt" in kwargs["system_prompt"]
@@ -98,7 +98,7 @@ async def test_router_stream_uses_registered_prompt(
     router = Router()
 
     async def fake_stream(self, messages, model, **kwargs):  # type: ignore[no-untyped-def]
-        assert messages == [{"role": "user", "content": "hello"}]
+        assert messages == [{"role": "user", "content": "hello", "images": []}]
         assert kwargs["system_prompt"] is not None
         assert "Review the code with a strict engineering lens." in kwargs["system_prompt"]
         yield ChatCompletionChunk(
