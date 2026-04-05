@@ -31,9 +31,13 @@ Usage:
 from __future__ import annotations
 
 from subllm.errors import (
+    AuthenticationError,
     MalformedRequestError,
     ProviderFailureError,
     ProviderTimeoutError,
+    RateLimitExceededError,
+    RequestTimeoutError,
+    RequestTooLargeError,
     SubLLMError,
     UnknownModelError,
     UnsupportedFeatureError,
@@ -74,10 +78,14 @@ __all__ = [
     "ChatCompletionChunk",
     "ChatCompletionResponse",
     "CompletionRequest",
+    "AuthenticationError",
     "MalformedRequestError",
     "ProviderFailureError",
     "ProviderTimeoutError",
+    "RateLimitExceededError",
     "RequestMessage",
+    "RequestTimeoutError",
+    "RequestTooLargeError",
     "SubLLMError",
     "UnknownModelError",
     "UnsupportedFeatureError",

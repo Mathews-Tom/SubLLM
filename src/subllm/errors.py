@@ -113,3 +113,51 @@ class ProviderTimeoutError(SubLLMError):
             status_code=504,
             param=provider,
         )
+
+
+class AuthenticationError(SubLLMError):
+    """Raised when server auth requirements are not met."""
+
+    def __init__(self, message: str = "Authentication required") -> None:
+        super().__init__(
+            message,
+            code="authentication_error",
+            error_type="authentication_error",
+            status_code=401,
+        )
+
+
+class RequestTooLargeError(SubLLMError):
+    """Raised when an HTTP request body exceeds the configured limit."""
+
+    def __init__(self, *, max_bytes: int) -> None:
+        super().__init__(
+            f"Request body exceeds the maximum allowed size of {max_bytes} bytes",
+            code="request_too_large",
+            error_type="invalid_request_error",
+            status_code=413,
+        )
+
+
+class RateLimitExceededError(SubLLMError):
+    """Raised when a client exceeds the configured request rate."""
+
+    def __init__(self, *, limit_per_minute: int) -> None:
+        super().__init__(
+            f"Rate limit exceeded: {limit_per_minute} requests per minute",
+            code="rate_limit_exceeded",
+            error_type="rate_limit_error",
+            status_code=429,
+        )
+
+
+class RequestTimeoutError(SubLLMError):
+    """Raised when HTTP request handling exceeds the configured timeout."""
+
+    def __init__(self, *, timeout_seconds: float) -> None:
+        super().__init__(
+            f"Request handling timed out after {timeout_seconds:.1f}s",
+            code="request_timeout",
+            error_type="api_error",
+            status_code=504,
+        )
