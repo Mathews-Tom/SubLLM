@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.responses import Response
 
+from subllm.cache import CacheConfig, ResponseCache, clear_cache_status, response_cache_headers
 from subllm.router import Router
 from subllm.server_api.errors import install_exception_handlers
 from subllm.server_api.middleware import install_server_controls
@@ -30,7 +31,16 @@ from subllm.types import ChatCompletionResponse
 
 def create_app(settings: ServerSettings | None = None) -> FastAPI:
     """Create FastAPI app with OpenAI-compatible endpoints."""
-    router = Router()
+    active_settings = settings or ServerSettings.from_inputs()
+    response_cache: ResponseCache | None = None
+    if active_settings.response_cache_ttl_seconds is not None:
+        response_cache = ResponseCache(
+            CacheConfig(
+                ttl_seconds=active_settings.response_cache_ttl_seconds,
+                max_entries=active_settings.response_cache_max_entries,
+            )
+        )
+    router = Router(response_cache=response_cache)
 
     @asynccontextmanager
     async def app_lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -41,7 +51,6 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
             shutdown_telemetry()
 
     app = FastAPI(title="SubLLM Proxy", version="0.2.0", lifespan=app_lifespan)
-    active_settings = settings or ServerSettings.from_inputs()
     configure_telemetry(
         TelemetryConfig(
             service_name=active_settings.trace_service_name,
@@ -58,6 +67,7 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
 
     @app.post("/v1/chat/completions", response_model=None)
     async def chat_completions(request: Request) -> Response:
+        clear_cache_status()
         completion_request = await parse_chat_completion_request(request)
 
         if completion_request.stream:
@@ -75,7 +85,10 @@ def create_app(settings: ServerSettings | None = None) -> FastAPI:
         completion_result: ChatCompletionResponse = await router.complete_request(
             completion_request
         )
-        return JSONResponse(completion_result.to_dict(), headers=response_context_headers())
+        return JSONResponse(
+            completion_result.to_dict(),
+            headers={**response_context_headers(), **response_cache_headers()},
+        )
 
     @app.get("/health")
     async def health() -> JSONResponse:
