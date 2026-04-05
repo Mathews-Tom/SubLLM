@@ -52,6 +52,10 @@ def render_readme_managed_section() -> str:
         "- Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts",
         "- Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`",
         (
+            "- Explicit session mode is opt-in through the `session` field. "
+            "Stateless requests do not reuse prior provider conversation state."
+        ),
+        (
             "- Registered prompt references are accepted through the `prompt` field and "
             "resolve to versioned system prompt text before provider dispatch."
         ),
