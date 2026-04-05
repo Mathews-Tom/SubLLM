@@ -27,6 +27,7 @@ from subllm.types import (
     Choice,
     Delta,
     Message,
+    ProviderMessage,
     StreamChoice,
     Usage,
 )
@@ -128,7 +129,7 @@ class CodexProvider(Provider):
 
     async def complete(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,
@@ -200,7 +201,7 @@ class CodexProvider(Provider):
 
     async def stream(
         self,
-        messages: list[dict],
+        messages: list[ProviderMessage],
         model: str,
         *,
         system_prompt: str | None = None,

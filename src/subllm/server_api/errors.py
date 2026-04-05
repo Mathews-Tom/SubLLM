@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import cast
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from subllm.errors import MalformedRequestError, SubLLMError
 from subllm.server_api.models import ErrorBody, ErrorResponse
+
+RequestHandler = Callable[[Request, Exception], JSONResponse | Awaitable[JSONResponse]]
 
 
 def build_error_response(exc: SubLLMError) -> ErrorResponse:
@@ -47,6 +52,9 @@ async def handle_unexpected_error(_request: Request, exc: Exception) -> JSONResp
 
 
 def install_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(SubLLMError, handle_subllm_error)
-    app.add_exception_handler(RequestValidationError, handle_request_validation_error)
+    app.add_exception_handler(SubLLMError, cast(RequestHandler, handle_subllm_error))
+    app.add_exception_handler(
+        RequestValidationError,
+        cast(RequestHandler, handle_request_validation_error),
+    )
     app.add_exception_handler(Exception, handle_unexpected_error)
