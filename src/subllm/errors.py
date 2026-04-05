@@ -87,3 +87,29 @@ class UnknownModelError(SubLLMError):
             status_code=400,
             param="model",
         )
+
+
+class ProviderFailureError(SubLLMError):
+    """Raised when a provider process or SDK session fails."""
+
+    def __init__(self, *, provider: str, message: str) -> None:
+        super().__init__(
+            message,
+            code="provider_failure",
+            error_type="api_error",
+            status_code=502,
+            param=provider,
+        )
+
+
+class ProviderTimeoutError(SubLLMError):
+    """Raised when a provider call exceeds the configured timeout."""
+
+    def __init__(self, *, provider: str, operation: str, timeout_seconds: float) -> None:
+        super().__init__(
+            f"{provider} {operation} timed out after {timeout_seconds:.1f}s",
+            code="provider_timeout",
+            error_type="api_error",
+            status_code=504,
+            param=provider,
+        )

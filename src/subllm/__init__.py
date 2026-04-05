@@ -32,6 +32,8 @@ from __future__ import annotations
 
 from subllm.errors import (
     MalformedRequestError,
+    ProviderFailureError,
+    ProviderTimeoutError,
     SubLLMError,
     UnknownModelError,
     UnsupportedFeatureError,
@@ -73,6 +75,8 @@ __all__ = [
     "ChatCompletionResponse",
     "CompletionRequest",
     "MalformedRequestError",
+    "ProviderFailureError",
+    "ProviderTimeoutError",
     "RequestMessage",
     "SubLLMError",
     "UnknownModelError",
