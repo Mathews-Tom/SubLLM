@@ -42,6 +42,15 @@ from subllm.errors import (
     UnknownModelError,
     UnsupportedFeatureError,
 )
+from subllm.evals import (
+    ContractCase,
+    ContractResult,
+    ContractSuiteResult,
+    default_contract_fixture_dir,
+    load_contract_cases,
+    run_contract_case,
+    run_contract_suite,
+)
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.router import (
     Router,
@@ -66,14 +75,21 @@ __version__ = "0.4.0"
 __all__ = [
     "Provider",
     "ProviderCapabilities",
+    "ContractCase",
+    "ContractResult",
+    "ContractSuiteResult",
     "Router",
     "batch",
     "check_auth",
     "check_auth_provider",
     "close",
     "completion",
+    "default_contract_fixture_dir",
     "get_router",
+    "load_contract_cases",
     "list_models",
+    "run_contract_case",
+    "run_contract_suite",
     "AuthStatus",
     "ChatCompletionChunk",
     "ChatCompletionResponse",

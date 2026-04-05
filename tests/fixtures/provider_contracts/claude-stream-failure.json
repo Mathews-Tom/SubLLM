@@ -1,0 +1,32 @@
+{
+  "name": "claude-stream-failure",
+  "provider": "claude-code",
+  "mode": "stream",
+  "model": "sonnet-4-5",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "sdk_events": [
+    {
+      "type": "assistant",
+      "texts": [
+        "partial"
+      ]
+    },
+    {
+      "type": "result",
+      "is_error": true,
+      "result": "permission denied"
+    }
+  ],
+  "expectation": {
+    "chunk_contents": [
+      "partial"
+    ],
+    "error_type": "ProviderFailureError",
+    "error_message_substring": "permission denied"
+  }
+}

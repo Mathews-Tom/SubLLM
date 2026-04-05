@@ -1,0 +1,25 @@
+{
+  "name": "gemini-stream-failure",
+  "provider": "gemini",
+  "mode": "stream",
+  "model": "gemini-3-flash-preview",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "stdout_lines": [
+    "{\"type\":\"content\",\"value\":\"partial\"}\n",
+    "{\"type\":\"result\",\"status\":\"error\"}\n"
+  ],
+  "stderr_text": "tool prompt blocked",
+  "returncode": 0,
+  "expectation": {
+    "chunk_contents": [
+      "partial"
+    ],
+    "error_type": "ProviderFailureError",
+    "error_message_substring": "tool prompt blocked"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "gemini-completion-success",
+  "provider": "gemini",
+  "mode": "completion",
+  "model": "gemini-3-flash-preview",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "stdout_lines": [
+    "{\"response\":\"gemini says hi\",\"stats\":{\"models\":{\"gemini-3-flash-preview\":{\"tokens\":{\"input\":3,\"output\":5}}}}}\n"
+  ],
+  "expectation": {
+    "content": "gemini says hi",
+    "usage": {
+      "prompt_tokens": 3,
+      "completion_tokens": 5,
+      "total_tokens": 8
+    }
+  }
+}
