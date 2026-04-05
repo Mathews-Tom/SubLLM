@@ -28,6 +28,7 @@ from subllm.types import (
     CompletionRequest,
     Message,
     ProviderMessage,
+    SessionRequest,
 )
 
 
@@ -55,6 +56,7 @@ class FakeProvider(Provider):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        session: SessionRequest | None = None,
     ) -> ChatCompletionResponse:
         assert model == "demo"
         assert messages == [{"role": "user", "content": "hello", "images": []}]
