@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from subllm.server import create_app
+from subllm.providers.codex import CodexProvider
 from subllm.server_api.settings import ServerSettings
 from subllm.types import (
     ChatCompletionChunk,
@@ -134,3 +135,43 @@ def test_timeout_integration(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 504
     assert response.json()["error"]["code"] == "request_timeout"
     assert response.headers["x-request-id"]
+
+
+def test_response_cache_reuses_identical_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_count = 0
+
+    async def fake_complete(self, messages, model, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal call_count
+        call_count += 1
+        return ChatCompletionResponse(
+            model=f"codex/{model}",
+            choices=[
+                Choice(message=Message(role="assistant", content="cached"), finish_reason="stop")
+            ],
+        )
+
+    monkeypatch.setattr(CodexProvider, "complete", fake_complete)
+    client = TestClient(
+        create_app(
+            ServerSettings(
+                response_cache_ttl_seconds=60,
+                response_cache_max_entries=16,
+            )
+        )
+    )
+    payload = {
+        "model": "codex/gpt-5.2",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+
+    first = client.post("/v1/chat/completions", json=payload)
+    second = client.post("/v1/chat/completions", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.headers["x-subllm-cache"] == "miss"
+    assert second.headers["x-subllm-cache"] == "hit"
+    assert second.json()["choices"][0]["message"]["content"] == "cached"
+    assert call_count == 1

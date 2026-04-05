@@ -30,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+from subllm.cache import CacheConfig, ResponseCache
 from subllm.errors import (
     AuthenticationError,
     MalformedRequestError,
@@ -95,6 +96,8 @@ __version__ = "0.4.0"
 __all__ = [
     "Provider",
     "ProviderCapabilities",
+    "CacheConfig",
+    "ResponseCache",
     "PromptRegistry",
     "RegisteredPrompt",
     "ResolvedPrompt",

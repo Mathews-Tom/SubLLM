@@ -103,6 +103,8 @@ def _run_server(
     max_request_bytes: int | None,
     request_timeout_seconds: float | None,
     rate_limit_per_minute: int | None,
+    response_cache_ttl_seconds: float | None,
+    response_cache_max_entries: int | None,
     trace_export_path: str | None,
     trace_service_name: str | None,
 ) -> None:
@@ -119,6 +121,8 @@ def _run_server(
         max_request_bytes=max_request_bytes,
         request_timeout_seconds=request_timeout_seconds,
         rate_limit_per_minute=rate_limit_per_minute,
+        response_cache_ttl_seconds=response_cache_ttl_seconds,
+        response_cache_max_entries=response_cache_max_entries,
         trace_export_path=trace_export_path or ".subllm/traces.jsonl",
         trace_service_name=trace_service_name,
     )
@@ -162,6 +166,8 @@ def main() -> None:
     p_serve.add_argument("--max-request-bytes", type=int)
     p_serve.add_argument("--request-timeout-seconds", type=float)
     p_serve.add_argument("--rate-limit-per-minute", type=int)
+    p_serve.add_argument("--response-cache-ttl-seconds", type=float)
+    p_serve.add_argument("--response-cache-max-entries", type=int)
     p_serve.add_argument("--trace-export-path")
     p_serve.add_argument("--trace-service-name")
 
@@ -185,6 +191,8 @@ def main() -> None:
             max_request_bytes=args.max_request_bytes,
             request_timeout_seconds=args.request_timeout_seconds,
             rate_limit_per_minute=args.rate_limit_per_minute,
+            response_cache_ttl_seconds=args.response_cache_ttl_seconds,
+            response_cache_max_entries=args.response_cache_max_entries,
             trace_export_path=args.trace_export_path,
             trace_service_name=args.trace_service_name,
         )

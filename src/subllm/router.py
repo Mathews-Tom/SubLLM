@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Mapping, Sequence
 
+from subllm.cache import ResponseCache, build_cache_key, set_cache_status
 from subllm.errors import UnknownModelError, UnsupportedFeatureError
 from subllm.model_registry import (
     all_model_descriptors,
@@ -46,12 +47,14 @@ class Router:
         *,
         auth_cache_ttl: float = 300.0,
         prompt_registry: PromptRegistry | None = None,
+        response_cache: ResponseCache | None = None,
     ) -> None:
         self._providers: dict[str, Provider] = {}
         self._auth_cache: list[AuthStatus] | None = None
         self._auth_cache_time: float = 0.0
         self._auth_cache_ttl: float = auth_cache_ttl
         self._prompt_registry = prompt_registry or get_prompt_registry()
+        self._response_cache = response_cache
         self.register(ClaudeCodeProvider())
         self.register(CodexProvider())
         self.register(GeminiCLIProvider())
@@ -79,6 +82,12 @@ class Router:
         system_prompt = request.compose_system_prompt(
             resolved_prompt.text if resolved_prompt is not None else None
         )
+        cache_key = self._build_cache_key(
+            provider_name=provider.name,
+            request=request,
+            resolved_prompt=resolved_prompt,
+            system_prompt=system_prompt,
+        )
         started = time.perf_counter()
         with get_tracer("subllm.router").start_as_current_span("subllm.completion") as span:
             attach_request_context(span)
@@ -87,6 +96,24 @@ class Router:
             span.set_attribute("subllm.model_alias", model_alias)
             span.set_attribute("subllm.request.stream", False)
             self._attach_prompt_attributes(span, resolved_prompt)
+            if cache_key is None:
+                set_cache_status("bypass")
+                span.set_attribute("subllm.cache.enabled", False)
+            else:
+                cache = self._response_cache
+                assert cache is not None
+                set_cache_status("miss")
+                span.set_attribute("subllm.cache.enabled", True)
+                cached_response = await cache.get(cache_key)
+                if cached_response is not None:
+                    set_cache_status("hit")
+                    span.set_attribute("subllm.cache.hit", True)
+                    span.set_attribute(
+                        "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
+                    )
+                    mark_span_success(span)
+                    return cached_response
+                span.set_attribute("subllm.cache.hit", False)
             try:
                 response = await provider.complete(
                     request.provider_messages,
@@ -104,6 +131,10 @@ class Router:
                 span.set_attribute(
                     "subllm.request.duration_ms", (time.perf_counter() - started) * 1000.0
                 )
+                if cache_key is not None:
+                    cache = self._response_cache
+                    assert cache is not None
+                    await cache.set(cache_key, response)
                 mark_span_success(span)
                 return response
             except Exception as exc:
@@ -271,6 +302,23 @@ class Router:
             return
         span.set_attribute("subllm.prompt.name", resolved_prompt.name)
         span.set_attribute("subllm.prompt.version", resolved_prompt.version)
+
+    def _build_cache_key(
+        self,
+        *,
+        provider_name: str,
+        request: CompletionRequest,
+        resolved_prompt: ResolvedPrompt | None,
+        system_prompt: str | None,
+    ) -> str | None:
+        if self._response_cache is None or request.stream:
+            return None
+        return build_cache_key(
+            provider_name=provider_name,
+            request=request,
+            resolved_prompt=resolved_prompt,
+            system_prompt=system_prompt,
+        )
 
     async def completion(
         self,
