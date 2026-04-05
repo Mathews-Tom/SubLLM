@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from ipaddress import ip_address
 
@@ -51,6 +52,27 @@ def _run_completion(model: str, prompt: str, stream: bool) -> None:
         else:
             completion_result = await complete_completion(model=model, messages=messages)
             print(completion_result.choices[0].message.content)
+
+    asyncio.run(_do())
+
+
+def _run_eval_contracts(fixture_dir: str | None, emit_json: bool) -> None:
+    from subllm.evals import default_contract_fixture_dir, run_contract_suite
+
+    async def _do() -> None:
+        suite = await run_contract_suite(fixture_dir or default_contract_fixture_dir())
+        if emit_json:
+            print(json.dumps(suite.to_dict(), indent=2, sort_keys=True))
+            return
+
+        print(f"passed: {suite.passed}")
+        print(f"failed: {suite.failed}")
+        for case in suite.cases:
+            status = "PASS" if case.passed else "FAIL"
+            print(f"{status} {case.provider} {case.mode} {case.name} - {case.detail}")
+
+        if suite.failed:
+            raise SystemExit(1)
 
     asyncio.run(_do())
 
@@ -107,6 +129,10 @@ def main() -> None:
     p_complete.add_argument("-m", "--model", default="claude-code/sonnet-4-5", help="Model to use")
     p_complete.add_argument("-s", "--stream", action="store_true", help="Stream output")
 
+    p_eval = sub.add_parser("eval-contracts", help="Run transcript-based provider contract checks")
+    p_eval.add_argument("--fixture-dir")
+    p_eval.add_argument("--json", action="store_true", dest="emit_json")
+
     p_serve = sub.add_parser("serve", help="Start OpenAI-compatible proxy server")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8080)
@@ -125,6 +151,8 @@ def main() -> None:
         _run_models()
     elif args.command == "complete":
         _run_completion(args.model, args.prompt, args.stream)
+    elif args.command == "eval-contracts":
+        _run_eval_contracts(args.fixture_dir, args.emit_json)
     elif args.command == "serve":
         _run_server(
             args.host,
