@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 import pytest
 
-from subllm.errors import PromptRenderError, UnknownPromptError, UnsupportedFeatureError
+from subllm.errors import (
+    InvalidAttachmentError,
+    PromptRenderError,
+    UnknownPromptError,
+    UnsupportedFeatureError,
+)
 from subllm.server import create_app
 from subllm.types import ChatCompletionResponse, Choice, CompletionRequest, Message
 
@@ -35,7 +42,7 @@ def test_completion_request_extracts_system_prompt_and_provider_messages() -> No
     )
 
     assert request.effective_system_prompt == "top level system prompt\n\nmessage system prompt"
-    assert request.provider_messages == [{"role": "user", "content": "hello"}]
+    assert request.provider_messages == [{"role": "user", "content": "hello", "images": []}]
 
 
 def test_completion_request_tracks_prompt_reference() -> None:
@@ -51,6 +58,33 @@ def test_completion_request_tracks_prompt_reference() -> None:
     assert request.prompt.name == "chat-default"
     assert request.prompt.version == "v1"
     assert request.compose_system_prompt("registered prompt") == "registered prompt"
+
+
+def test_completion_request_normalizes_text_file_input(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_text("attached content", encoding="utf-8")
+    request = CompletionRequest.from_mapping(
+        {
+            "model": "codex/gpt-5.2",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "before"},
+                        {"type": "input_file", "file_path": str(path)},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert request.provider_messages == [
+        {
+            "role": "user",
+            "content": 'before\n\n<attached_file name="notes.txt">\nattached content\n</attached_file>',
+            "images": [],
+        }
+    ]
 
 
 def test_chat_completions_returns_openai_style_error_for_unsupported_fields() -> None:
@@ -112,12 +146,35 @@ def test_chat_completions_rejects_prompt_variable_mismatch() -> None:
 def test_known_prompt_errors_are_exported() -> None:
     assert UnknownPromptError(prompt_name="x").code == "prompt_not_found"
     assert PromptRenderError(message="bad").code == "prompt_render_error"
+    assert InvalidAttachmentError(message="bad").code == "invalid_attachment"
+
+
+def test_chat_completions_rejects_missing_file_input() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "codex/gpt-5.2",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_file", "file_path": "/tmp/does-not-exist-subllm.txt"}
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_attachment"
 
 
 def test_chat_completions_uses_typed_request_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_complete_request(self, request):  # type: ignore[no-untyped-def]
         assert request.model == "claude-code/sonnet-4-5"
-        assert request.provider_messages == [{"role": "user", "content": "hello"}]
+        assert request.provider_messages == [{"role": "user", "content": "hello", "images": []}]
         assert request.effective_system_prompt == "system message"
         return ChatCompletionResponse(
             model=request.model,

@@ -51,6 +51,7 @@ class ProviderCapabilities:
     supports_tool_use: bool = False  # Tool use executes inside CLI sandbox, not exposed
     supports_batch: bool = False
     supports_vision: bool = False
+    supports_file_inputs: bool = False
     max_context_tokens: int = 200_000
     subscription_auth: bool = True
     api_key_auth: bool = True

@@ -57,7 +57,7 @@ class FakeProvider(Provider):
         temperature: float | None = None,
     ) -> ChatCompletionResponse:
         assert model == "demo"
-        assert messages == [{"role": "user", "content": "hello"}]
+        assert messages == [{"role": "user", "content": "hello", "images": []}]
         return ChatCompletionResponse(
             model="fake/demo",
             choices=[Choice(message=Message(role="assistant", content="ok"), finish_reason="stop")],

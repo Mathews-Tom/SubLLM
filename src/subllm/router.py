@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Mapping, Sequence
 
+from subllm.attachments import message_has_images
 from subllm.cache import ResponseCache, build_cache_key, set_cache_status
 from subllm.errors import UnknownModelError, UnsupportedFeatureError
 from subllm.model_registry import (
@@ -36,6 +37,7 @@ from subllm.types import (
     ChatCompletionResponse,
     CompletionRequest,
     ModelDescriptor,
+    ProviderMessage,
 )
 
 
@@ -82,6 +84,8 @@ class Router:
         system_prompt = request.compose_system_prompt(
             resolved_prompt.text if resolved_prompt is not None else None
         )
+        provider_messages = request.provider_messages
+        self._validate_message_capabilities(provider.name, provider_messages)
         cache_key = self._build_cache_key(
             provider_name=provider.name,
             request=request,
@@ -116,7 +120,7 @@ class Router:
                 span.set_attribute("subllm.cache.hit", False)
             try:
                 response = await provider.complete(
-                    request.provider_messages,
+                    provider_messages,
                     model_alias,
                     system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
@@ -158,6 +162,8 @@ class Router:
         system_prompt = request.compose_system_prompt(
             resolved_prompt.text if resolved_prompt is not None else None
         )
+        provider_messages = request.provider_messages
+        self._validate_message_capabilities(provider.name, provider_messages)
         started = time.perf_counter()
         chunk_count = 0
         with get_tracer("subllm.router").start_as_current_span("subllm.stream") as span:
@@ -169,7 +175,7 @@ class Router:
             self._attach_prompt_attributes(span, resolved_prompt)
             try:
                 async for chunk in provider.stream(
-                    request.provider_messages,
+                    provider_messages,
                     model_alias,
                     system_prompt=system_prompt,
                     max_tokens=request.max_tokens,
@@ -302,6 +308,23 @@ class Router:
             return
         span.set_attribute("subllm.prompt.name", resolved_prompt.name)
         span.set_attribute("subllm.prompt.version", resolved_prompt.version)
+
+    def _validate_message_capabilities(
+        self,
+        provider_name: str,
+        messages: list[ProviderMessage],
+    ) -> None:
+        capabilities = self.get_capabilities(provider_name)
+        if capabilities is None:
+            return
+        if (
+            any(message_has_images(message) for message in messages)
+            and not capabilities.supports_vision
+        ):
+            raise UnsupportedFeatureError(
+                field="messages",
+                message=f"Provider '{provider_name}' does not support image inputs",
+            )
 
     def _build_cache_key(
         self,

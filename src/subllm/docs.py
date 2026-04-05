@@ -49,6 +49,7 @@ def render_readme_managed_section() -> str:
         "",
         f"- Accepted request fields: {supported_fields}",
         "- Supported message roles: `system`, `user`, `assistant`",
+        "- Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts",
         "- Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`",
         (
             "- Registered prompt references are accepted through the `prompt` field and "
@@ -91,10 +92,10 @@ def render_readme_managed_section() -> str:
             "## Provider Capabilities",
             "",
             (
-                "| Provider | Streaming | Sessions | System Prompt | Vision | "
+                "| Provider | Streaming | Sessions | System Prompt | Vision | File Inputs | "
                 "Context Window | Auth Modes | Backend |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for provider in _PROVIDERS:
@@ -113,6 +114,7 @@ def render_readme_managed_section() -> str:
                     _render_bool(capabilities.supports_sessions),
                     _render_bool(capabilities.supports_system_prompt),
                     _render_bool(capabilities.supports_vision),
+                    _render_bool(capabilities.supports_file_inputs),
                     f"{capabilities.max_context_tokens:,}",
                     ", ".join(auth_modes),
                     f"`{provider.backend}`",

@@ -18,10 +18,11 @@ def test_registry_exposes_registered_models_and_capabilities() -> None:
         "gpt-5-mini",
     ]
     assert resolve_provider_model("claude-code", "sonnet-4-5") == "claude-sonnet-4-5"
-    capabilities = provider_capabilities("gemini")
+    capabilities = provider_capabilities("codex")
     assert capabilities is not None
     assert capabilities.supports_vision is True
-    assert capabilities.supports_sessions is False
+    assert capabilities.supports_file_inputs is True
+    assert capabilities.supports_sessions is True
 
 
 def test_readme_generated_section_matches_registry() -> None:

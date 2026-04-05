@@ -129,6 +129,7 @@ SubLLM implements a strict subset of the OpenAI chat completions contract.
 
 - Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `stream`, `system_prompt`, `temperature`
 - Supported message roles: `system`, `user`, `assistant`
+- Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts
 - Supported endpoints: `POST /v1/chat/completions`, `GET /v1/models`, `GET /health`
 - Registered prompt references are accepted through the `prompt` field and resolve to versioned system prompt text before provider dispatch.
 - Unsupported chat-completions fields are rejected explicitly. Common examples: `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, `logprobs`, `top_logprobs`, `n`, `metadata`, `modalities`, `audio`, `store`, `user`, `reasoning`
@@ -157,11 +158,11 @@ SubLLM implements a strict subset of the OpenAI chat completions contract.
 
 ## Provider Capabilities
 
-| Provider | Streaming | Sessions | System Prompt | Vision | Context Window | Auth Modes | Backend |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| claude-code | yes | yes | yes | yes | 200,000 | subscription, api_key | `claude-agent-sdk` |
-| codex | yes | yes | yes | no | 200,000 | subscription, api_key | `codex exec` |
-| gemini | yes | no | yes | yes | 1,000,000 | subscription, api_key | `gemini -p` |
+| Provider | Streaming | Sessions | System Prompt | Vision | File Inputs | Context Window | Auth Modes | Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| claude-code | yes | yes | yes | no | yes | 200,000 | subscription, api_key | `claude-agent-sdk` |
+| codex | yes | yes | yes | yes | yes | 200,000 | subscription, api_key | `codex exec` |
+| gemini | yes | no | yes | no | yes | 1,000,000 | subscription, api_key | `gemini -p` |
 <!-- END GENERATED SECTION: registry-docs -->
 
 ## Architecture
