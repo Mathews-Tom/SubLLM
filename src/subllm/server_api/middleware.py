@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from subllm.errors import (
     AuthenticationError,
@@ -48,29 +51,52 @@ def _authorization_token(request: Request) -> str | None:
     return token
 
 
-async def _buffer_request_body(request: Request, max_request_bytes: int) -> None:
-    body = await request.body()
-    if len(body) > max_request_bytes:
-        raise RequestTooLargeError(max_bytes=max_request_bytes)
+class RequestBodyLimitMiddleware:
+    def __init__(self, app: ASGIApp, *, max_request_bytes: int) -> None:
+        self.app = app
+        self._max_request_bytes = max_request_bytes
 
-    async def receive() -> dict[str, object]:
-        return {"type": "http.request", "body": body, "more_body": False}
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-    request._receive = receive  # type: ignore[attr-defined]
+        total_bytes = 0
+
+        async def guarded_receive() -> Message:
+            nonlocal total_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                total_bytes += len(message.get("body", b""))
+                if total_bytes > self._max_request_bytes:
+                    raise RequestTooLargeError(max_bytes=self._max_request_bytes)
+            return message
+
+        try:
+            await self.app(scope, guarded_receive, send)
+        except SubLLMError as exc:
+            payload = build_error_response(exc)
+            response = JSONResponse(status_code=exc.status_code, content=payload.model_dump())
+            await response(scope, receive, send)
 
 
 def install_server_controls(app: FastAPI, settings: ServerSettings) -> None:
     rate_limiter = RateLimiter(settings.rate_limit_per_minute)
+    app.add_middleware(
+        RequestBodyLimitMiddleware,
+        max_request_bytes=settings.max_request_bytes,
+    )
 
     @app.middleware("http")
-    async def enforce_server_controls(request: Request, call_next):  # type: ignore[no-untyped-def]
+    async def enforce_server_controls(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         def error_response(exc: SubLLMError) -> JSONResponse:
             payload = build_error_response(exc)
             return JSONResponse(status_code=exc.status_code, content=payload.model_dump())
 
         try:
-            await _buffer_request_body(request, settings.max_request_bytes)
-
             if settings.auth_token is not None:
                 token = _authorization_token(request)
                 if token != settings.auth_token:

@@ -6,13 +6,15 @@ from typing import Any
 
 from fastapi import Request
 
-from subllm.errors import MalformedRequestError
+from subllm.errors import MalformedRequestError, SubLLMError
 from subllm.types import CompletionRequest
 
 
 async def parse_json_object(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
+    except SubLLMError:
+        raise
     except Exception as exc:
         raise MalformedRequestError("Request body must be valid JSON") from exc
 
