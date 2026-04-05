@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync Dependencies
+        run: uv sync --extra server --extra dev
+      - name: Ruff Lint
+        run: uv run ruff check src tests
+      - name: Ruff Format Check
+        run: uv run ruff format --check .
+      - name: Strict Typing
+        run: uv run mypy --strict src tests
+
+  test-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync Dependencies
+        run: uv sync --extra server --extra dev
+      - name: Pytest
+        run: uv run pytest
+
+  contract-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync Dependencies
+        run: uv sync --extra server --extra dev
+      - name: Transcript Contracts
+        run: uv run subllm eval-contracts --json
