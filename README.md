@@ -4,18 +4,19 @@
 
 # SubLLM
 
-> Route standard LLM API calls through subscription-authenticated coding agents instead of API keys.
+> Experimental personal-use gateway for evaluating CLI-backed LLM access behind a narrow OpenAI-compatible subset.
 
-Use your Claude Pro/Max, ChatGPT Plus/Pro, or Google AI Pro/Ultra subscription as the backend for programmatic LLM calls. SubLLM provides an **OpenAI-compatible unified interface** that abstracts Claude Code, Codex, and Gemini CLIs behind a standard `completion()` API.
+SubLLM is an experimental package for personal use and small internal evaluation. It exposes a strict, limited OpenAI-compatible surface over Claude Code, Codex, and Gemini CLI backends. It is not positioned as a production proxy, resale layer, or a way to evade provider billing or platform terms.
 
 ## Why?
 
-You already pay for a subscription — Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro/Ultra — but the moment you need to run a script, you're forced to pay _again_ for API access to the same models. Subscription plans offer flat-rate access but lock you into chat UIs with no programmatic interface. API keys unlock programmatic access but bill per-token on top of what you're already paying.
+The project exists to explore whether a narrow, typed gateway can safely reuse provider-supported local CLI workflows for personal automation and evaluation. It is intentionally conservative about the contract, explicit about unsupported features, and designed around local operator control rather than broad deployment.
 
-SubLLM eliminates the double-pay problem. It routes standard `completion()` calls through CLI tools that authenticate via your existing subscriptions — turning flat-rate chat plans into programmable LLM backends.
+Use it only where the underlying provider tooling and your account terms permit it.
 
-- **Flat-rate pricing** — pay your subscription, not per-token. Heavy usage costs the same as light usage.
-- **Zero API key management** — CLIs authenticate through your subscription. No keys to provision, rotate, or secure.
+- **Experimental by design** — the supported surface is intentionally small and explicit.
+- **Personal-use orientation** — suitable for local scripts, prototypes, and internal evaluation.
+- **Fail-fast boundaries** — unsupported fields and unsupported provider capabilities are rejected explicitly.
 - **OpenAI-compatible interface** — standard `completion()` API with OpenAI ChatCompletion response format. Swap SubLLM in/out of existing code with minimal changes.
 - **Cross-provider** — same API surface for Claude, GPT, and Gemini. Switch models by changing a string.
 
@@ -25,9 +26,9 @@ SubLLM eliminates the double-pay problem. It routes standard `completion()` call
 | **SubLLM (subscription)** | **$0-200/mo flat** | **~280ms** | Good for batch/dev |
 | Direct API + LiteLLM      | $50-500+/mo        | ~0s        | Multi-provider     |
 
-**Best for:** development, prototyping, batch jobs, CI/CD, personal automation, cost-sensitive pipelines.
+**Best for:** development, prototyping, batch jobs, CI/CD, personal automation, and internal evaluation.
 
-**Not for:** real-time chat UIs, latency-sensitive production services, multi-tenant SaaS (ToS constraints), workloads requiring tool use / function calling / prompt caching / logprobs / stop sequences (these features execute inside CLI sandboxes and are not exposed).
+**Not for:** real-time chat UIs, latency-sensitive production services, multi-tenant SaaS, shared hosted access to consumer accounts, or any use that would violate provider terms. It also does not expose tool use / function calling / prompt caching / logprobs / stop sequences.
 
 ## Quick Start
 
@@ -127,6 +128,7 @@ response = client.chat.completions.create(
 
 SubLLM implements a strict subset of the OpenAI chat completions contract.
 
+- Experimental package intended for personal use and small internal evaluation only
 - Accepted request fields: `max_tokens`, `messages`, `model`, `prompt`, `session`, `stream`, `system_prompt`, `temperature`
 - Supported message roles: `system`, `user`, `assistant`
 - Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts
@@ -198,30 +200,30 @@ Measured on macOS. Claude Code uses the Agent SDK (persistent client, no subproc
 
 ### Auth Check
 
-| Provider    | Method               | Latency |
-| ----------- | -------------------- | ------- |
-| claude-code | `claude auth status` | ~302ms  |
-| codex       | subscription check   | ~94ms   |
-| gemini      | OAuth credential file | ~2ms   |
-| **all (parallel)** | **`asyncio.gather`** | **~279ms** |
+| Provider           | Method                | Latency    |
+| ------------------ | --------------------- | ---------- |
+| claude-code        | `claude auth status`  | ~302ms     |
+| codex              | subscription check    | ~94ms      |
+| gemini             | OAuth credential file | ~2ms       |
+| **all (parallel)** | **`asyncio.gather`**  | **~279ms** |
 
 Auth is bounded by the slowest provider. Previous sequential approach with inference roundtrips: ~30s total.
 
 ### Completion
 
-| Provider    | Model                         | Non-streaming | Streaming |
-| ----------- | ----------------------------- | ------------- | --------- |
-| claude-code | `sonnet-4-5`                  | ~6s           | ~7s       |
-| codex       | `gpt-5.2`                     | ~7s           | ~9s       |
-| gemini      | `gemini-3-flash-preview`      | ~14s          | ~11s      |
+| Provider    | Model                    | Non-streaming | Streaming |
+| ----------- | ------------------------ | ------------- | --------- |
+| claude-code | `sonnet-4-5`             | ~6s           | ~7s       |
+| codex       | `gpt-5.2`                | ~7s           | ~9s       |
+| gemini      | `gemini-3-flash-preview` | ~14s          | ~11s      |
 
 ### Multi-turn
 
-| Provider    | Model                         | Turn 1 | Turn 2 |
-| ----------- | ----------------------------- | ------ | ------ |
-| claude-code | `sonnet-4-5`                  | ~8s    | ~3s    |
-| codex       | `gpt-5.2`                     | ~9s    | ~10s   |
-| gemini      | `gemini-3-flash-preview`      | ~55s   | ~12s   |
+| Provider    | Model                    | Turn 1 | Turn 2 |
+| ----------- | ------------------------ | ------ | ------ |
+| claude-code | `sonnet-4-5`             | ~8s    | ~3s    |
+| codex       | `gpt-5.2`                | ~9s    | ~10s   |
+| gemini      | `gemini-3-flash-preview` | ~55s   | ~12s   |
 
 Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 context. Gemini Turn 1 includes initial codebase investigation overhead.
 
@@ -229,11 +231,11 @@ Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 
 
 Message history replayed across different providers within a single conversation:
 
-| Turn           | Provider                        | Latency |
-| -------------- | ------------------------------- | ------- |
-| 1 (remember)   | `claude-code/sonnet-4-5`        | ~7s     |
-| 2 (recall)     | `codex/gpt-5.2`                | ~11s    |
-| 3 (verify)     | `gemini/gemini-3-flash-preview` | ~15s    |
+| Turn         | Provider                        | Latency |
+| ------------ | ------------------------------- | ------- |
+| 1 (remember) | `claude-code/sonnet-4-5`        | ~7s     |
+| 2 (recall)   | `codex/gpt-5.2`                 | ~11s    |
+| 3 (verify)   | `gemini/gemini-3-flash-preview` | ~15s    |
 
 ### Batch (3 parallel completions)
 
@@ -246,15 +248,20 @@ Message history replayed across different providers within a single conversation
 
 Parallel execution bounded by the slowest request.
 
-## Terms of Service & Disclaimer
+## Safety & Terms
 
-SubLLM routes completion calls through CLI tools that authenticate via your subscription. It does not circumvent authentication, store credentials, or proxy third-party access. **Users are responsible for compliance with each provider's terms of service.**
+SubLLM routes completion calls through locally installed provider CLIs or SDKs. It does not bypass authentication, crack access controls, or grant third parties access to your accounts. **Users are responsible for ensuring their usage complies with each provider's current terms and product policies.**
 
-- **Anthropic** — Anthropic prohibits third-party developers from offering claude.ai login for their products. The "user brings their own authenticated CLI" pattern is established by Cline, Zed, and Repo Prompt. Safe for personal and team use. Do not ship as a SaaS product.
-- **OpenAI** — Codex CLI explicitly supports ChatGPT subscription auth and programmatic `exec` mode. Officially supported pattern.
-- **Google** — Gemini CLI supports Google OAuth and API key auth. Standard usage pattern.
+- Treat this package as experimental software for personal use and small internal evaluation.
+- Do not present it as a mechanism to avoid provider pricing, bypass provider restrictions, or resell subscription-backed access.
+- Do not deploy it as a public gateway or multi-tenant service over consumer accounts.
+- Review each provider's current terms before use. Terms and product behavior change.
 
-Review each provider's current ToS before use. Terms change.
+Provider-specific notes:
+
+- **Anthropic** — avoid exposing Claude account-backed access through third-party hosted products or shared gateways.
+- **OpenAI** — use only documented Codex CLI flows that your account and plan permit.
+- **Google** — use only documented Gemini CLI or API-key flows that your account and plan permit.
 
 ## License
 

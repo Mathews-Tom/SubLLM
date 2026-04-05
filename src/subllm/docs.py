@@ -47,6 +47,7 @@ def render_readme_managed_section() -> str:
         "",
         "SubLLM implements a strict subset of the OpenAI chat completions contract.",
         "",
+        "- Experimental package intended for personal use and small internal evaluation only",
         f"- Accepted request fields: {supported_fields}",
         "- Supported message roles: `system`, `user`, `assistant`",
         "- Message content supports plain strings or arrays of `text`, `image_url`, and `input_file` parts",
