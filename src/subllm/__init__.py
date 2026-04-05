@@ -30,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+from subllm.errors import MalformedRequestError, SubLLMError, UnsupportedFeatureError
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.router import (
     Router,
@@ -41,7 +42,13 @@ from subllm.router import (
     get_router,
     list_models,
 )
-from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
+from subllm.types import (
+    AuthStatus,
+    ChatCompletionChunk,
+    ChatCompletionResponse,
+    CompletionRequest,
+    RequestMessage,
+)
 
 __version__ = "0.4.0"
 
@@ -59,4 +66,9 @@ __all__ = [
     "AuthStatus",
     "ChatCompletionChunk",
     "ChatCompletionResponse",
+    "CompletionRequest",
+    "MalformedRequestError",
+    "RequestMessage",
+    "SubLLMError",
+    "UnsupportedFeatureError",
 ]

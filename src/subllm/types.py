@@ -5,6 +5,90 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Any, ClassVar, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from subllm.errors import MalformedRequestError, UnsupportedFeatureError
+
+
+class RequestMessage(BaseModel):
+    """Supported request message subset."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class CompletionRequest(BaseModel):
+    """Internal request contract shared by the Python API and HTTP boundary."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    supported_fields: ClassVar[frozenset[str]] = frozenset(
+        {"model", "messages", "stream", "system_prompt", "max_tokens", "temperature"}
+    )
+
+    model: str = Field(min_length=1)
+    messages: list[RequestMessage] = Field(min_length=1)
+    stream: bool = False
+    system_prompt: str | None = None
+    max_tokens: int | None = Field(default=None, ge=1)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, Any]) -> CompletionRequest:
+        unsupported_fields = sorted(set(data) - cls.supported_fields)
+        if unsupported_fields:
+            field_list = ", ".join(unsupported_fields)
+            raise UnsupportedFeatureError(
+                field="request",
+                message=f"Unsupported request fields: {field_list}",
+            )
+
+        try:
+            return cls.model_validate(data)
+        except Exception as exc:
+            raise MalformedRequestError.from_validation_error(exc) from exc
+
+    @classmethod
+    def from_inputs(
+        cls,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        stream: bool = False,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> CompletionRequest:
+        return cls.from_mapping(
+            {
+                "model": model,
+                "messages": messages,
+                "stream": stream,
+                "system_prompt": system_prompt,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+        )
+
+    @property
+    def effective_system_prompt(self) -> str | None:
+        parts: list[str] = []
+        if self.system_prompt:
+            parts.append(self.system_prompt)
+        parts.extend(message.content for message in self.messages if message.role == "system")
+        return "\n\n".join(parts) if parts else None
+
+    @property
+    def provider_messages(self) -> list[dict[str, str]]:
+        return [
+            {"role": message.role, "content": message.content}
+            for message in self.messages
+            if message.role != "system"
+        ]
 
 
 @dataclass

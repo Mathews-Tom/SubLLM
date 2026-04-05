@@ -9,12 +9,13 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from typing import Any
 
 from subllm.providers.base import Provider, ProviderCapabilities
 from subllm.providers.claude_code import ClaudeCodeProvider
 from subllm.providers.codex import CodexProvider
 from subllm.providers.gemini_cli import GeminiCLIProvider
-from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse
+from subllm.types import AuthStatus, ChatCompletionChunk, ChatCompletionResponse, CompletionRequest
 
 
 class Router:
@@ -64,9 +65,9 @@ class Router:
         ):
             return self._auth_cache
 
-        results = list(await asyncio.gather(
-            *(provider.check_auth() for provider in self._providers.values())
-        ))
+        results = list(
+            await asyncio.gather(*(provider.check_auth() for provider in self._providers.values()))
+        )
         self._auth_cache = results
         self._auth_cache_time = time.monotonic()
         return results
@@ -86,8 +87,7 @@ class Router:
         provider = self._providers.get(provider_name)
         if provider is None:
             raise ValueError(
-                f"Unknown provider '{provider_name}'. "
-                f"Available: {', '.join(self._providers)}"
+                f"Unknown provider '{provider_name}'. Available: {', '.join(self._providers)}"
             )
         return await provider.check_auth()
 
@@ -108,36 +108,49 @@ class Router:
                 return self._providers[name], model
 
         raise ValueError(
-            f"No provider found for model '{model}'. "
-            f"Available: {', '.join(self.list_providers())}"
+            f"No provider found for model '{model}'. Available: {', '.join(self.list_providers())}"
         )
 
     async def completion(
         self,
         model: str,
-        messages: list[dict],
+        messages: list[dict[str, Any]],
         *,
         stream: bool = False,
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> ChatCompletionResponse | AsyncIterator[ChatCompletionChunk]:
-        provider, model_alias = self._resolve(model)
+        request = CompletionRequest.from_inputs(
+            model=model,
+            messages=messages,
+            stream=stream,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        provider, model_alias = self._resolve(request.model)
 
-        if stream:
+        if request.stream:
             return provider.stream(
-                messages, model_alias,
-                system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature,
+                request.provider_messages,
+                model_alias,
+                system_prompt=request.effective_system_prompt,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
             )
 
         return await provider.complete(
-            messages, model_alias,
-            system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature,
+            request.provider_messages,
+            model_alias,
+            system_prompt=request.effective_system_prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
         )
 
     async def batch(
         self,
-        requests: list[dict],
+        requests: list[dict[str, Any] | CompletionRequest],
         *,
         concurrency: int = 3,
     ) -> list[ChatCompletionResponse | Exception]:
@@ -148,15 +161,26 @@ class Router:
         """
         sem = asyncio.Semaphore(concurrency)
 
-        async def _run_one(req: dict) -> ChatCompletionResponse | Exception:
+        async def _run_one(
+            req: dict[str, Any] | CompletionRequest,
+        ) -> ChatCompletionResponse | Exception:
             async with sem:
                 try:
+                    request = (
+                        req
+                        if isinstance(req, CompletionRequest)
+                        else CompletionRequest.from_mapping(req)
+                    )
                     return await self.completion(
-                        model=req["model"],
-                        messages=req["messages"],
-                        system_prompt=req.get("system_prompt"),
-                        max_tokens=req.get("max_tokens"),
-                        temperature=req.get("temperature"),
+                        model=request.model,
+                        messages=[
+                            {"role": message.role, "content": message.content}
+                            for message in request.messages
+                        ],
+                        stream=request.stream,
+                        system_prompt=request.system_prompt,
+                        max_tokens=request.max_tokens,
+                        temperature=request.temperature,
                     )
                 except Exception as e:
                     return e
@@ -172,7 +196,7 @@ _router = Router()
 
 async def completion(
     model: str,
-    messages: list[dict],
+    messages: list[dict[str, Any]],
     *,
     stream: bool = False,
     system_prompt: str | None = None,
@@ -195,13 +219,17 @@ async def completion(
             print(chunk.choices[0].delta.content, end="")
     """
     return await _router.completion(
-        model=model, messages=messages, stream=stream,
-        system_prompt=system_prompt, max_tokens=max_tokens, temperature=temperature,
+        model=model,
+        messages=messages,
+        stream=stream,
+        system_prompt=system_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
     )
 
 
 async def batch(
-    requests: list[dict],
+    requests: list[dict[str, Any] | CompletionRequest],
     *,
     concurrency: int = 3,
 ) -> list[ChatCompletionResponse | Exception]:
