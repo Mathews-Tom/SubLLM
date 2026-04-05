@@ -26,7 +26,12 @@ from typing import Any, Literal
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
-from subllm.providers.base import Provider, ProviderCapabilities, estimate_tokens, messages_to_prompt
+from subllm.providers.base import (
+    Provider,
+    ProviderCapabilities,
+    estimate_tokens,
+    messages_to_prompt,
+)
 from subllm.types import (
     AuthStatus,
     ChatCompletionChunk,
@@ -142,7 +147,9 @@ class ClaudeCodeProvider(Provider):
             env = self._build_env()
             env["CLAUDECODE"] = ""  # Prevent error inside active Claude Code sessions
             proc = await asyncio.create_subprocess_exec(
-                self._cli_path, "auth", "status",
+                self._cli_path,
+                "auth",
+                "status",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
@@ -169,7 +176,12 @@ class ClaudeCodeProvider(Provider):
         """Fallback: run a minimal inference call to verify auth."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._cli_path, "--print", "-p", "say ok", "--max-turns", "1",
+                self._cli_path,
+                "--print",
+                "-p",
+                "say ok",
+                "--max-turns",
+                "1",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=self._build_env(),
@@ -190,13 +202,18 @@ class ClaudeCodeProvider(Provider):
             )
         except FileNotFoundError:
             return AuthStatus(
-                provider=self.name, authenticated=False, error="Claude Code CLI not found.",
+                provider=self.name,
+                authenticated=False,
+                error="Claude Code CLI not found.",
             )
 
     # ── SDK inference ────────────────────────────────────────────────
 
     def _build_sdk_options(
-        self, model: str, *, system_prompt: str | None = None,
+        self,
+        model: str,
+        *,
+        system_prompt: str | None = None,
     ) -> ClaudeAgentOptions:
         """Build ClaudeAgentOptions for the SDK client."""
         resolved = self.resolve_model(model)
@@ -220,14 +237,16 @@ class ClaudeCodeProvider(Provider):
             model=resolved,
             max_turns=1,
             system_prompt=system_prompt or "",
-            permission_mode="bypassPermissions",
+            permission_mode="default",
             thinking=thinking_config,
             effort=self._effort,
             cli_path=self._cli_path,
             env=sdk_env,
         )
 
-    async def _ensure_sdk_client(self, model: str, *, system_prompt: str | None = None) -> ClaudeSDKClient:
+    async def _ensure_sdk_client(
+        self, model: str, *, system_prompt: str | None = None
+    ) -> ClaudeSDKClient:
         """Return the persistent SDK client, connecting on first use.
 
         The client maintains a warm subprocess — subsequent calls skip spawn overhead.
@@ -253,7 +272,11 @@ class ClaudeCodeProvider(Provider):
         return await self._complete(messages, model, system_prompt=system_prompt)
 
     async def _complete(
-        self, messages: list[dict], model: str, *, system_prompt: str | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
     ) -> ChatCompletionResponse:
         prompt = messages_to_prompt(messages, system_prompt)
 
@@ -273,9 +296,7 @@ class ClaudeCodeProvider(Provider):
                     if message.usage:
                         usage_data = message.usage
                     if message.is_error:
-                        raise RuntimeError(
-                            f"SDK query failed: {message.result or 'unknown error'}"
-                        )
+                        raise RuntimeError(f"SDK query failed: {message.result or 'unknown error'}")
 
             content = "".join(content_parts)
 
@@ -285,10 +306,12 @@ class ClaudeCodeProvider(Provider):
 
             return ChatCompletionResponse(
                 model=f"claude-code/{model}",
-                choices=[Choice(
-                    message=Message(role="assistant", content=content),
-                    finish_reason="stop",
-                )],
+                choices=[
+                    Choice(
+                        message=Message(role="assistant", content=content),
+                        finish_reason="stop",
+                    )
+                ],
                 usage=Usage(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
@@ -314,7 +337,11 @@ class ClaudeCodeProvider(Provider):
             yield chunk
 
     async def _stream_impl(
-        self, messages: list[dict], model: str, *, system_prompt: str | None = None,
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        system_prompt: str | None = None,
     ) -> AsyncIterator[ChatCompletionChunk]:
         prompt = messages_to_prompt(messages, system_prompt)
 
@@ -332,10 +359,16 @@ class ClaudeCodeProvider(Provider):
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         yield ChatCompletionChunk(
-                            id=chunk_id, model=f"claude-code/{model}",
-                            choices=[StreamChoice(delta=Delta(
-                                role="assistant" if first else None, content=block.text,
-                            ))],
+                            id=chunk_id,
+                            model=f"claude-code/{model}",
+                            choices=[
+                                StreamChoice(
+                                    delta=Delta(
+                                        role="assistant" if first else None,
+                                        content=block.text,
+                                    )
+                                )
+                            ],
                         )
                         first = False
             elif isinstance(message, ResultMessage):
@@ -343,7 +376,8 @@ class ClaudeCodeProvider(Provider):
                     logger.error("SDK stream error: %s", message.result)
 
         yield ChatCompletionChunk(
-            id=chunk_id, model=f"claude-code/{model}",
+            id=chunk_id,
+            model=f"claude-code/{model}",
             choices=[StreamChoice(delta=Delta(), finish_reason="stop")],
         )
 
