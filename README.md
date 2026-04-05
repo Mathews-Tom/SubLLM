@@ -198,30 +198,30 @@ Measured on macOS. Claude Code uses the Agent SDK (persistent client, no subproc
 
 ### Auth Check
 
-| Provider    | Method               | Latency |
-| ----------- | -------------------- | ------- |
-| claude-code | `claude auth status` | ~302ms  |
-| codex       | subscription check   | ~94ms   |
-| gemini      | OAuth credential file | ~2ms   |
-| **all (parallel)** | **`asyncio.gather`** | **~279ms** |
+| Provider           | Method                | Latency    |
+| ------------------ | --------------------- | ---------- |
+| claude-code        | `claude auth status`  | ~302ms     |
+| codex              | subscription check    | ~94ms      |
+| gemini             | OAuth credential file | ~2ms       |
+| **all (parallel)** | **`asyncio.gather`**  | **~279ms** |
 
 Auth is bounded by the slowest provider. Previous sequential approach with inference roundtrips: ~30s total.
 
 ### Completion
 
-| Provider    | Model                         | Non-streaming | Streaming |
-| ----------- | ----------------------------- | ------------- | --------- |
-| claude-code | `sonnet-4-5`                  | ~6s           | ~7s       |
-| codex       | `gpt-5.2`                     | ~7s           | ~9s       |
-| gemini      | `gemini-3-flash-preview`      | ~14s          | ~11s      |
+| Provider    | Model                    | Non-streaming | Streaming |
+| ----------- | ------------------------ | ------------- | --------- |
+| claude-code | `sonnet-4-5`             | ~6s           | ~7s       |
+| codex       | `gpt-5.2`                | ~7s           | ~9s       |
+| gemini      | `gemini-3-flash-preview` | ~14s          | ~11s      |
 
 ### Multi-turn
 
-| Provider    | Model                         | Turn 1 | Turn 2 |
-| ----------- | ----------------------------- | ------ | ------ |
-| claude-code | `sonnet-4-5`                  | ~8s    | ~3s    |
-| codex       | `gpt-5.2`                     | ~9s    | ~10s   |
-| gemini      | `gemini-3-flash-preview`      | ~55s   | ~12s   |
+| Provider    | Model                    | Turn 1 | Turn 2 |
+| ----------- | ------------------------ | ------ | ------ |
+| claude-code | `sonnet-4-5`             | ~8s    | ~3s    |
+| codex       | `gpt-5.2`                | ~9s    | ~10s   |
+| gemini      | `gemini-3-flash-preview` | ~55s   | ~12s   |
 
 Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 context. Gemini Turn 1 includes initial codebase investigation overhead.
 
@@ -229,11 +229,11 @@ Full conversation history replayed each turn (stateless). Turn 2 carries Turn 1 
 
 Message history replayed across different providers within a single conversation:
 
-| Turn           | Provider                        | Latency |
-| -------------- | ------------------------------- | ------- |
-| 1 (remember)   | `claude-code/sonnet-4-5`        | ~7s     |
-| 2 (recall)     | `codex/gpt-5.2`                | ~11s    |
-| 3 (verify)     | `gemini/gemini-3-flash-preview` | ~15s    |
+| Turn         | Provider                        | Latency |
+| ------------ | ------------------------------- | ------- |
+| 1 (remember) | `claude-code/sonnet-4-5`        | ~7s     |
+| 2 (recall)   | `codex/gpt-5.2`                 | ~11s    |
+| 3 (verify)   | `gemini/gemini-3-flash-preview` | ~15s    |
 
 ### Batch (3 parallel completions)
 
